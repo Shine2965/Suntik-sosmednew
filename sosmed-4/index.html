@@ -1594,7 +1594,7 @@ cekAkses();
   modeSingle.addEventListener('click', () => setMode('single'));
   modeMassal.addEventListener('click', () => setMode('massal'));
 
-  // ===== DATA LAYANAN - LOLLIPOP (POST METHOD) =====
+  // ===== DATA LAYANAN - JURAGAN SOSMED (POST METHOD) =====
   const SERVICES_ENDPOINT = '/api/juragan-sosmed-services';
 
   function formatRp(n) {
@@ -2467,14 +2467,14 @@ cekAkses();
     }, 280);
   }
 
-  // ===== LOAD DATA - LOLLIPOP (POST METHOD) =====
+  // ===== LOAD DATA - JURAGAN SOSMED (POST METHOD) =====
   async function loadData(silent) {
     if (isLoading) return;
     isLoading = true;
     
     const infoLayanan = document.getElementById('infoLayanan');
     if (infoLayanan && !silent) {
-      infoLayanan.innerHTML = '⏳ Memuat data layanan dari Shine Shop...';
+      infoLayanan.innerHTML = '⏳ Memuat data layanan dari Juragan Sosmed...';
     }
     
     try {
@@ -2518,12 +2518,12 @@ cekAkses();
       }
 
       checkBalanceAndToggleButtons();
-      console.log('✅ Data layanan berhasil dimuat. Provider Balance:', providerBalance);
+      console.log('✅ Data layanan Juragan Sosmed berhasil dimuat. Balance:', providerBalance);
       
     } catch (err) {
       if (!silent) {
         console.error('❌ Error load data:', err);
-        alert('Data layanan gagal dimuat dari Lollipop.\n' + (err.message || 'Silakan refresh halaman.'));
+        alert('Data layanan gagal dimuat dari Juragan Sosmed.\n' + (err.message || 'Silakan refresh halaman.'));
       }
       if (infoLayanan && !silent) {
         infoLayanan.innerHTML = '❌ Gagal memuat data: ' + (err.message || '');
