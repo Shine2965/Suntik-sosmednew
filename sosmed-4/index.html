@@ -2218,7 +2218,7 @@ cekAkses();
       comment: requiresComment ? document.getElementById('comments').value : null
     }];
 
-    let url = 'payment/?trx=' + trxID +
+    let url = '/sosmed-4/payment/?trx=' + trxID +
       '&total=' + total +
       '&mass=0' +
       '&layanan=' + encodeURIComponent(selectedService.name) +
