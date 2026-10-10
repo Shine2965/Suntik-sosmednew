@@ -1293,14 +1293,14 @@ cekAkses();
     <button class="close-offcanvas" id="menuClose" type="button" aria-label="Tutup">✕</button>
   </div>
   <ul class="menu-list">
-    <li><a href="/sosmed-4/cekstatus">Cek Pesanan</a></li>
+    <li><a href="/sosmed-1/cekstatus">Cek Pesanan</a></li>
     <li><a href="https://whatsapp.com/channel/0029Vb8pYHd0G0XjnloL680y" target="_blank" rel="noopener">Channel WhatsApp</a></li>
   </ul>
 </nav>
 
 <!-- FORM -->
 <main class="container">
-  <h2>Suntik Sosmed 4 - Shine Shop</h2>
+  <h2>Suntik Sosmed 1 - Shine Shop</h2>
 <marquee bgcolor="black" scrollamount="5" style="color: white; font-family: Arial, sans-serif; padding: 10px; font-size: 16px;">
     Jika ada Kendala hubungi WhatsApp +62 895-1810-3883 Instagram: onivla_ 
     <b style="color: red; margin-left: 10px;">HARAP BERHATI HATI TERHADAP PENIPUAN YANG MENGATASNAMAKAN SHINE SHOP. SHINE SHOP TIDAK MENERIMA TRANSAKSI DILUAR WEBSITE</b>
@@ -1594,8 +1594,8 @@ cekAkses();
   modeSingle.addEventListener('click', () => setMode('single'));
   modeMassal.addEventListener('click', () => setMode('massal'));
 
-  // ===== DATA LAYANAN - JURAGAN SOSMED (POST METHOD) =====
-  const SERVICES_ENDPOINT = '/api/juragan-sosmed-services';
+  // ===== DATA LAYANAN - JURAGAN SOSMED =====
+  const SERVICES_ENDPOINT = '/api/juragan-services';
 
   function formatRp(n) {
     return 'Rp' + Number(n || 0).toLocaleString('id-ID');
@@ -1761,7 +1761,6 @@ cekAkses();
   }
 
   function openCSelect(cselectEl, title, items, selectedValue, onPick) {
-    // Toggle behavior
     if (activeCSelect === cselectEl && cselectEl.classList.contains('open')) {
       closeAllCSelect();
       return;
@@ -1784,7 +1783,6 @@ cekAkses();
     const listEl = panel.querySelector('.cselect-list');
     const searchEl = panel.querySelector('.cselect-search');
 
-    // Cegah klik di dalam panel menutup dropdown
     panel.addEventListener('click', function (e) {
       e.stopPropagation();
     });
@@ -1813,7 +1811,6 @@ cekAkses();
     });
 
     if (mobile) {
-      // ===== MOBILE: bottom sheet + backdrop =====
       const backdrop = document.createElement('div');
       backdrop.className = 'cselect-backdrop';
       backdrop.addEventListener('click', closeAllCSelect);
@@ -1832,7 +1829,6 @@ cekAkses();
         setTimeout(function () { searchEl.focus(); }, 280);
       });
     } else {
-      // ===== DESKTOP: dropdown inline, tanpa backdrop =====
       cselectEl.appendChild(panel);
 
       void panel.offsetHeight;
@@ -1844,7 +1840,6 @@ cekAkses();
         searchEl.focus();
       });
 
-      // Click-outside untuk desktop
       setTimeout(function () {
         outsideClickHandler = function (e) {
           if (activeCSelect && !activeCSelect.contains(e.target)) {
@@ -2467,14 +2462,14 @@ cekAkses();
     }, 280);
   }
 
-  // ===== LOAD DATA - JURAGAN SOSMED (POST METHOD) =====
+  // ===== LOAD DATA - JURAGAN SOSMED =====
   async function loadData(silent) {
     if (isLoading) return;
     isLoading = true;
     
     const infoLayanan = document.getElementById('infoLayanan');
     if (infoLayanan && !silent) {
-      infoLayanan.innerHTML = '⏳ Memuat data layanan dari Juragan Sosmed...';
+      infoLayanan.innerHTML = '⏳ Memuat data layanan dari Shine Shop...';
     }
     
     try {
@@ -2518,7 +2513,7 @@ cekAkses();
       }
 
       checkBalanceAndToggleButtons();
-      console.log('✅ Data layanan Juragan Sosmed berhasil dimuat. Balance:', providerBalance);
+      console.log('✅ Data layanan berhasil dimuat. Provider Balance:', providerBalance);
       
     } catch (err) {
       if (!silent) {
