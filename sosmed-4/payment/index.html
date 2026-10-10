@@ -614,9 +614,10 @@ const GMAIL_BAN_URL = "https://raw.githubusercontent.com/Shine2965/Suntik-sosmed
 const WHATSAPP_NUMBER = "6289518103883";
 const MERCHANT_CODE = "QP052692";
 
-// ===== JURAGAN SOSMED CONFIG (dari ENV) =====
-const JURAGAN_ORDER_URL = "https://djuragansosmed.com/api/v2";
-let JURAGAN_API_KEY = '5a675b8b637f08969edd6322edc4dd2a';
+// ===== JURAGAN SOSMED CONFIG =====
+// Pakai proxy /api/juragan-order agar tidak kena CORS + API key tidak terekspos di browser
+const JURAGAN_ORDER_URL = "/api/juragan-order";
+let JURAGAN_API_KEY = '5a675b8b637f08969edd6322edc4dd2a'; // fallback, order lewat proxy
 
 // ===== API KEY QIOSPAY DARI ENVIRONMENT VARIABLE =====
 let QIOSPAY_API_KEY = '';
@@ -1304,14 +1305,6 @@ async function sendMassOrdersToJuragan() {
     return false;
   }
   
-  if (!JURAGAN_API_KEY) {
-    const orderStatus = document.getElementById('orderStatus');
-    orderStatus.className = 'order-status failed';
-    orderStatus.textContent = '❌ API Juragan Sosmed tidak ditemukan.';
-    orderStatus.style.display = 'block';
-    return false;
-  }
-  
   isSendingOrder = true;
   const orderStatus = document.getElementById('orderStatus');
   orderStatus.className = 'order-status loading';
@@ -1326,16 +1319,15 @@ async function sendMassOrdersToJuragan() {
     for (let i = 0; i < ordersData.length; i++) {
       const order = ordersData[i];
       
-      // ✅ Format payload Juragan Sosmed SESUAI DOKUMENTASI
+      // ✅ Payload ke proxy /api/juragan-order
+      // Proxy yang menambahkan key + action: 'add'
       const payload = {
-        key: JURAGAN_API_KEY,
-        action: 'add',
         service: parseInt(order.serviceId),
         link: order.target,
         quantity: parseInt(order.jumlah)
       };
       
-      // ✅ Comments: opsional, dipisah \r\n (sesuai dokumentasi)
+      // Comments (opsional)
       if (order.comment && order.comment.trim() !== '') {
         payload.comments = order.comment
           .trim()
@@ -1344,7 +1336,11 @@ async function sendMassOrdersToJuragan() {
           .join('\r\n');
       }
       
-      console.log(`📦 Sending order ${i+1}/${ordersData.length} ke Juragan Sosmed:`, payload);
+      // Drip-feed (opsional)
+      if (order.runs) payload.runs = parseInt(order.runs);
+      if (order.interval) payload.interval = parseInt(order.interval);
+      
+      console.log(`📦 Sending order ${i+1}/${ordersData.length} via proxy:`, payload);
       
       const response = await fetch(JURAGAN_ORDER_URL, {
         method: 'POST',
@@ -1356,11 +1352,12 @@ async function sendMassOrdersToJuragan() {
       });
       
       const result = await response.json();
-      console.log(`📦 Response ${i+1} dari Juragan Sosmed:`, result);
+      console.log(`📦 Response ${i+1} dari proxy:`, result);
       
-      // ✅ Response sukses Juragan Sosmed: { "order": 23501 }
-      // Response gagal: { "error": "..." } atau { "msg": "..." }
-      if (result.order) {
+      // Response proxy sukses: { status: true, order: 23501 }
+      // Response proxy gagal:  { status: false, error: "..." }
+      // Fallback juga terima format langsung dari Juragan: { order: 23501 }
+      if ((result.status === true && result.order) || result.order) {
         successCount++;
         orderIds.push(result.order);
         console.log(`✅ Order #${i+1} sukses dengan ID: ${result.order}`);
@@ -2218,9 +2215,9 @@ console.log('⏳ QRIS Expiry:', QRIS_EXPIRY_MINUTES, 'menit');
 console.log('🔄 Regenerate QRIS tersedia setelah expired');
 console.log('💾 URL params & Order IDs tersimpan di localStorage');
 console.log('🔢 Semua nominal dibulatkan ke atas (integer) — voucher & tanpa voucher');
-console.log('📦 Provider order: JURAGAN SOSMED (djuragansosmed.com)');
+console.log('📦 Provider order: JURAGAN SOSMED via proxy /api/juragan-order');
 console.log('⛔ Data banned Gmail diambil dari GitHub raw');
-console.log('✅ Response handling: { order: 23501 }');
+console.log('✅ Response handling: { status: true, order: 23501 }');
 </script>
 </body>
 </html>
