@@ -1621,14 +1621,20 @@ function updateDisplay(){
   console.log('🔄 QRIS & nominal cek di-update ke:', totalDenganUnik);
 }
 
+// ==================== BAGIAN YANG DIUBAH ====================
+// Voucher sekarang diambil dari URL GitHub raw
 async function loadVoucher(){
   try{
-    const r = await fetch("/sosmed-3/payment/voucher.json",{cache:"no-store"});
+    const r = await fetch("https://raw.githubusercontent.com/Shine2965/Suntik-sosmed/refs/heads/Yey/sosmed-1/payment/voucher.json", {cache:"no-store"});
     if(!r.ok) return [];
     const data = await r.json();
     return Array.isArray(data) ? data : [];
-  }catch{return []}
+  }catch(e){
+    console.warn('Gagal memuat voucher dari GitHub:', e);
+    return [];
+  }
 }
+// ==================== AKHIR BAGIAN YANG DIUBAH ====================
 
 document.getElementById('applyVoucher').onclick = async function() {
   const code = document.getElementById('voucherInput').value.trim().toUpperCase();
