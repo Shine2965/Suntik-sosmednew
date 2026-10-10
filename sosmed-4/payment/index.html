@@ -269,7 +269,7 @@ input:focus{
   box-shadow:0 0 0 4px rgba(0,198,255,0.10);
 }
 input:disabled{opacity:0.4;cursor:not-allowed}
-p{
+p.alert-text{
   color:#fca5a5;
   font-size:13px;
   line-height:1.7;
@@ -548,9 +548,9 @@ p{
 <!-- QRIS CARD -->
 <div id="qrisCard" class="card">
   <h2>💳 Pembayaran QRIS</h2>
-  <p style="color: #FF0000;"><b>Jangan tutup halaman saat sedang melakukan pembayaran atau pembayaran terverifikasi sampai muncul pop up id pesanan</b></p>
+  <p class="alert-text"><b>Jangan tutup halaman saat sedang melakukan pembayaran atau pembayaran terverifikasi sampai muncul pop up id pesanan</b></p>
   
-  <div class="subtitle">✦ Shine Shop - Sosmed 4 ✦</div>
+  <div class="subtitle">✦ Shine Shop - Sosmed 1 ✦</div>
   
   <!-- GMAIL DISPLAY -->
   <div class="gmail-display">
@@ -574,17 +574,17 @@ p{
   </div>
   
   <div class="unique-code" id="uniqueCodeContainer">🔑 Kode Unik: <span id="uniqueCode">-</span></div>
-   
+  
   <!-- TOMBOL REGENERATE -->
   <button class="btn btn-regenerate" id="regenerateBtn" style="display:none;">
     🔄 Generate Ulang QRIS
   </button>
   
   <div class="details" id="orderDetails"></div>
-   <input type="text" id="voucherInput" placeholder="Kode Voucher (opsional)">
+  
+  <input type="text" id="voucherInput" placeholder="Kode Voucher (opsional)">
   <button id="applyVoucher" class="btn">🎫 Gunakan Voucher</button>
   <div class="voucher-status" id="voucherStatus"></div>
-  
   
   <!-- PAYMENT STATUS -->
   <div id="paymentStatus" class="payment-status"></div>
@@ -602,34 +602,22 @@ p{
     <span class="wib-value" id="wibTimeDisplay">--:--:--</span>
   </div>
   
-  <p>📸 Screenshot seluruh transaksi serta bukti transfer untuk berjaga-jaga jika terdapat kendala, anda bisa menghubungi admin melalui CS Bot</p>
+  <p class="alert-text">📸 Screenshot seluruh transaksi serta bukti transfer untuk berjaga-jaga jika terdapat kendala, anda bisa menghubungi admin melalui CS Bot</p>
 </div>
 
 <script>
-
 // ===================== KONFIGURASI =====================
 const discordWebhook = "https://discord.com/api/webhooks/1482244992725553164/k6boQq7vBc3184RxiPtG6-obIKDZQWBu0f8cHQnLTevnwo8wFuaUKzhWzRkJ3Hl0_yne";
-// ✅ Gmail ban data diambil dari GitHub raw
-const GMAIL_BAN_URL = "https://raw.githubusercontent.com/Shine2965/Suntik-sosmed/refs/heads/Yey/sosmed-2/payment/gmail.json";
+const GMAIL_BAN_URL = "/sosmed-2/payment/gmail.json";
 const WHATSAPP_NUMBER = "6289518103883";
 const MERCHANT_CODE = "QP052692";
 
-// ===== JURAGAN SOSMED CONFIG =====
-// Pakai proxy /api/juragan-order agar tidak kena CORS + API key tidak terekspos di browser
-const JURAGAN_ORDER_URL = "/api/juragan-order";
-let JURAGAN_API_KEY = '5a675b8b637f08969edd6322edc4dd2a'; // fallback, order lewat proxy
-
-// ===== API KEY QIOSPAY DARI ENVIRONMENT VARIABLE =====
 let QIOSPAY_API_KEY = '';
-const ADMIN_FEE_PERCENT = 2;
+const ADMIN_FEE_PERCENT = 1;
 const ADMIN_FEE_THRESHOLD = 500000;
-const QRIS_EXPIRY_MINUTES = 30; // 1 JAM
+const QRIS_EXPIRY_MINUTES = 10;
 
 // ===== ROUNDING HELPER =====
-function roundUp(amount) {
-  return Math.ceil(Number(amount) || 0);
-}
-
 function normalizeTotal(amount) {
   const n = Number(amount) || 0;
   return Math.ceil(n);
@@ -637,238 +625,98 @@ function normalizeTotal(amount) {
 
 // ===== AMBIL PARAMETER DARI URL =====
 const p = new URLSearchParams(location.search);
-let trx = p.get("trx") || "-";
-let total = normalizeTotal(p.get("total") || 0);
-let isMass = p.get("mass") === "1";
+const trx = p.get("trx") || "-";
+const total = normalizeTotal(p.get("total") || 0);
+const isMass = p.get("mass") === "1";
 let ordersData = [];
+let layanan = "-";
+let target = "-";
+let jumlah = 0;
+let serviceId = null;
 
-// ================= PERSISTENT URL PARAMS =================
-function getUrlParamsKey(trxId) {
-  return `url_params_${trxId}`;
-}
-
-function saveUrlParams() {
-  try {
-    if (!trx || trx === "-") return;
-    const data = {
-      trx: trx,
-      total: total,
-      isMass: isMass,
-      orders: ordersData,
-      savedAt: new Date().toISOString()
-    };
-    localStorage.setItem(getUrlParamsKey(trx), JSON.stringify(data));
-    localStorage.setItem('last_trx', trx);
-    console.log('💾 URL params disimpan:', data);
-  } catch (e) {
-    console.warn('Gagal simpan URL params:', e);
-  }
-}
-
-function loadUrlParams() {
-  try {
-    const ordersParam = p.get("orders");
-    if (ordersParam && trx !== "-") {
-      ordersData = JSON.parse(decodeURIComponent(ordersParam));
-      console.log('📦 Orders data dari URL:', ordersData.length, 'items');
-      saveUrlParams();
-      return true;
+try {
+  const ordersParam = p.get("orders");
+  if (ordersParam) {
+    ordersData = JSON.parse(decodeURIComponent(ordersParam));
+    if (ordersData.length > 0) {
+      const firstOrder = ordersData[0];
+      layanan = firstOrder.serviceName || "-";
+      target = firstOrder.target || "-";
+      jumlah = firstOrder.jumlah || 0;
+      serviceId = firstOrder.serviceId || null;
     }
-    
-    if (trx === "-" || !p.get("trx")) {
-      const storedTrx = localStorage.getItem('last_trx');
-      if (storedTrx) {
-        const key = getUrlParamsKey(storedTrx);
-        const stored = localStorage.getItem(key);
-        if (stored) {
-          const data = JSON.parse(stored);
-          trx = data.trx;
-          total = normalizeTotal(data.total);
-          isMass = data.isMass;
-          ordersData = data.orders || [];
-          console.log('🔄 URL params dipulihkan dari localStorage:', data);
-          
-          try {
-            const newUrl = new URL(window.location.href);
-            newUrl.searchParams.set('trx', trx);
-            newUrl.searchParams.set('total', total);
-            if (isMass) newUrl.searchParams.set('mass', '1');
-            if (ordersData.length > 0) {
-              newUrl.searchParams.set('orders', encodeURIComponent(JSON.stringify(ordersData)));
-            }
-            window.history.replaceState({}, '', newUrl.toString());
-          } catch(e) {
-            console.warn('Gagal update URL:', e);
-          }
-          
-          return true;
-        }
-      }
-    } else if (trx !== "-" && !ordersParam) {
-      const key = getUrlParamsKey(trx);
-      const stored = localStorage.getItem(key);
-      if (stored) {
-        const data = JSON.parse(stored);
-        ordersData = data.orders || [];
-        console.log('🔄 Orders data dipulihkan dari localStorage (partial):', ordersData.length, 'items');
-      }
-    }
-  } catch (e) {
-    console.warn('Gagal load URL params:', e);
   }
-  return false;
+} catch (e) {
+  console.warn('Gagal parse orders data:', e);
 }
 
-if (trx && trx !== "-") {
-  localStorage.setItem('last_trx', trx);
-}
-
-loadUrlParams();
-
-// ================= PERSISTENT ORDER IDS =================
-function getOrderIdsKey(trxId) {
-  return `order_ids_${trxId}`;
-}
-
-function saveOrderIds(orderIds) {
-  try {
-    const key = getOrderIdsKey(trx);
-    const existing = JSON.parse(localStorage.getItem(key) || '[]');
-    const combined = [...new Set([...existing, ...orderIds])];
-    localStorage.setItem(key, JSON.stringify(combined));
-    console.log('💾 Order IDs disimpan:', combined);
-  } catch (e) {
-    console.warn('Gagal simpan order IDs:', e);
-  }
-}
-
-function loadOrderIds() {
-  try {
-    const key = getOrderIdsKey(trx);
-    const stored = localStorage.getItem(key);
-    if (stored) {
-      const ids = JSON.parse(stored);
-      console.log('🔄 Order IDs dipulihkan:', ids);
-      return ids;
-    }
-  } catch (e) {
-    console.warn('Gagal load order IDs:', e);
-  }
-  return [];
-}
-
-function displayStoredOrderIds() {
-  const storedIds = loadOrderIds();
-  if (storedIds.length > 0) {
-    const orderStatus = document.getElementById('orderStatus');
-    const orderIdStr = storedIds.join(', ');
-    orderStatus.className = 'order-status success';
-    orderStatus.innerHTML = `
-      ✅ ${storedIds.length} pesanan tersimpan!
-      <div class="order-id-box">
-        🆔 ID Pesanan: <strong>${orderIdStr}</strong>
-        <button class="copy-btn" onclick="copyOrderId('${orderIdStr}')">📋 Salin Semua</button>
-      </div>
-      <div style="margin-top:6px;font-size:11px;color:#888;">
-        ⚠️ Simpan ID pesanan ini untuk cek status order.
-      </div>
-    `;
-    orderStatus.style.display = 'block';
-    return true;
-  }
-  return false;
+if (layanan === "-" || layanan === "") {
+  layanan = p.get("layanan") || "-";
+  target = p.get("target") || "-";
+  jumlah = Number(p.get("jumlah") || 0);
+  serviceId = p.get("serviceId") || null;
 }
 
 // ===== NOTIFIKASI DISCORD =====
-function getDiscordSentKey() {
-  return `discord_sent_${trx}`;
-}
+function getDiscordSentKey() { return `discord_sent_${trx}`; }
 
 function isDiscordAlreadySent() {
-  try {
-    const key = getDiscordSentKey();
-    return localStorage.getItem(key) === 'true';
-  } catch {
-    return false;
-  }
+  try { return localStorage.getItem(getDiscordSentKey()) === 'true'; } 
+  catch { return false; }
 }
 
 function markDiscordSent() {
   try {
-    const key = getDiscordSentKey();
-    localStorage.setItem(key, 'true');
-    console.log('📨 Discord notification marked as sent');
+    localStorage.setItem(getDiscordSentKey(), 'true');
     return true;
   } catch (e) {
-    console.warn('Gagal mark Discord sent:', e);
     return false;
   }
 }
 
-// ===== ORDER JURAGAN SOSMED =====
-function getOrderSentKey() {
-  return `order_sent_${trx}`;
-}
+// ===== ORDER SENT KEY =====
+function getOrderSentKey() { return `order_sent_${trx}`; }
 
 function isOrderAlreadySent() {
-  try {
-    const key = getOrderSentKey();
-    return localStorage.getItem(key) === 'true';
-  } catch {
-    return false;
-  }
+  try { return localStorage.getItem(getOrderSentKey()) === 'true'; } 
+  catch { return false; }
 }
 
 function markOrderSent() {
   try {
-    const key = getOrderSentKey();
-    localStorage.setItem(key, 'true');
-    console.log('📦 Order Juragan Sosmed marked as sent');
+    localStorage.setItem(getOrderSentKey(), 'true');
     return true;
   } catch (e) {
-    console.warn('Gagal mark order sent:', e);
     return false;
   }
 }
 
 // ================= PERSISTENT STATE =================
-function getPaymentStateKey() {
-  return `payment_state_${trx}`;
-}
+function getPaymentStateKey() { return `payment_state_${trx}`; }
 
 function getPaymentState() {
   try {
-    const key = getPaymentStateKey();
-    const data = localStorage.getItem(key);
-    if (data) {
-      return JSON.parse(data);
-    }
+    const data = localStorage.getItem(getPaymentStateKey());
+    return data ? JSON.parse(data) : null;
   } catch (e) {
-    console.warn('Gagal baca payment state:', e);
+    return null;
   }
-  return null;
 }
 
 function savePaymentState(state) {
   try {
-    const key = getPaymentStateKey();
-    localStorage.setItem(key, JSON.stringify(state));
-    console.log('💾 Payment state saved:', state);
+    localStorage.setItem(getPaymentStateKey(), JSON.stringify(state));
     return true;
   } catch (e) {
-    console.warn('Gagal simpan payment state:', e);
     return false;
   }
 }
 
 function clearPaymentState() {
   try {
-    const key = getPaymentStateKey();
-    localStorage.removeItem(key);
-    console.log('🗑️ Payment state cleared');
+    localStorage.removeItem(getPaymentStateKey());
     return true;
   } catch (e) {
-    console.warn('Gagal clear payment state:', e);
     return false;
   }
 }
@@ -879,42 +727,16 @@ async function fetchConfigFromEnv() {
     const res = await fetch('/api/qris-config');
     if (res.ok) {
       const data = await res.json();
-      
-      if (data.qiospay_api_key) {
-        QIOSPAY_API_KEY = data.qiospay_api_key;
-        console.log('✅ QIOSPAY API Key dari ENV');
-      }
-      
-      if (data.juragan_api_key) {
-        JURAGAN_API_KEY = data.juragan_api_key;
-        console.log('✅ JURAGAN SOSMED API Key dari ENV');
-      }
-      
+      if (data.qiospay_api_key) QIOSPAY_API_KEY = data.qiospay_api_key;
       return true;
     }
   } catch (e) {
-    console.warn('⚠️ Gagal mengambil config dari ENV:', e);
+    console.warn('⚠️ Gagal mengambil config dari API server:', e);
   }
-  
-  if (!QIOSPAY_API_KEY) {
-    QIOSPAY_API_KEY = 'd1370635be9857299bde44b946c938655534efdff7ef5246685b67ef91decb1c';
-    console.log('📌 QIOSPAY API Key default');
-  }
-  if (!JURAGAN_API_KEY) {
-    JURAGAN_API_KEY = '5a675b8b637f08969edd6322edc4dd2a';
-    console.log('📌 JURAGAN SOSMED API Key default');
-  }
-  
   return false;
 }
 
 const QIOSPAY_MUTASI_URL = () => `https://qiospay.id/api/mutasi/qris/${MERCHANT_CODE}/${QIOSPAY_API_KEY}`;
-
-function maskID(id) {
-  id = String(id || "-");
-  if (id.length <= 4) return id;
-  return id.slice(0, 2) + "**" + id.slice(-2);
-}
 
 let originalTotal = total;
 let finalTotal = total;
@@ -933,51 +755,34 @@ let currentTotalBayar = 0;
 let isProcessingPayment = false;
 let verificationAttempts = 0;
 
-// ===== QRIS EXPIRY =====
 let qrisExpiryTime = null;
 let qrisTimerInterval = null;
 let isQrisExpired = false;
 let qrisRegenerationCount = 0;
 
-// ===== KODE UNIK PERSISTEN =====
-function getUniqueCodeKey() {
-  return `unique_code_${trx}`;
-}
+function getUniqueCodeKey() { return `unique_code_${trx}`; }
 
 function getStoredUniqueCode() {
   try {
-    const key = getUniqueCodeKey();
-    const stored = localStorage.getItem(key);
+    const stored = localStorage.getItem(getUniqueCodeKey());
     if (stored !== null) {
-      const parsed = parseInt(stored);
-      if (!isNaN(parsed) && parsed >= 0 && parsed <= 99) {
-        console.log('🔑 Kode unik dari localStorage:', parsed);
-        return parsed;
-      }
+      const parsed = parseInt(stored, 10);
+      if (!isNaN(parsed) && parsed >= 1 && parsed <= 99) return parsed;
     }
-  } catch (e) {
-    console.warn('Gagal baca kode unik dari localStorage:', e);
-  }
+  } catch (e) {}
   return null;
 }
 
 function saveUniqueCode(code) {
   try {
-    const key = getUniqueCodeKey();
-    localStorage.setItem(key, String(code));
-    console.log('💾 Kode unik disimpan ke localStorage:', code);
+    localStorage.setItem(getUniqueCodeKey(), String(code));
     return true;
-  } catch (e) {
-    console.warn('Gagal simpan kode unik:', e);
-    return false;
-  }
+  } catch (e) { return false; }
 }
 
 function generateUniqueCode() {
   const existingCode = getStoredUniqueCode();
-  if (existingCode !== null) {
-    return existingCode;
-  }
+  if (existingCode !== null) return existingCode;
   const newCode = Math.floor(Math.random() * 99) + 1;
   saveUniqueCode(newCode);
   return newCode;
@@ -996,17 +801,19 @@ function calculateAdminFee(amount) {
   return 0;
 }
 
-// ================= USER ID =================
 function generateUserID(){
   return 'user-' + Math.random().toString(36).substring(2,10) + '-' + Date.now().toString(36);
 }
+
 async function getUserID(){
   let id = localStorage.getItem("user_id");
-  if(!id){id = generateUserID();localStorage.setItem("user_id", id);}
+  if(!id){
+    id = generateUserID();
+    localStorage.setItem("user_id", id);
+  }
   return id;
 }
 
-// ================= GMAIL =================
 function getStoredGmail() {
   return localStorage.getItem('user_gmail') || null;
 }
@@ -1015,7 +822,6 @@ function validateEmail(email) {
   return email && email.includes('@') && email.includes('.') && email.length > 5;
 }
 
-// ================= WIB REAL-TIME =================
 function getWIBTime() { return new Date(); }
 
 function formatWIB(date) {
@@ -1043,9 +849,7 @@ function formatWIBTime(date) {
 
 function updateWIBDisplay() {
   const displayEl = document.getElementById('wibTimeDisplay');
-  if (displayEl) {
-    displayEl.textContent = formatWIBTime(getWIBTime());
-  }
+  if (displayEl) displayEl.textContent = formatWIBTime(getWIBTime());
 }
 
 function updateBannedWIBDisplay() {
@@ -1066,7 +870,6 @@ function startWIBClock() {
 }
 startWIBClock();
 
-// ================= CEK BANNED GMAIL =================
 async function checkGmailBanned(gmail) {
   if (!gmail || !validateEmail(gmail)) return null;
   try {
@@ -1084,12 +887,10 @@ async function checkGmailBanned(gmail) {
     }
     return banned;
   } catch (err) {
-    console.error('Error check banned:', err);
     return null;
   }
 }
 
-// ================= SHOW BANNED PAGE =================
 function showBannedPage(bannedData, userID, gmail) {
   document.getElementById('bannedContainer').style.display = 'flex';
   document.getElementById('qrisCard').style.display = 'none';
@@ -1108,7 +909,6 @@ function showBannedPage(bannedData, userID, gmail) {
   }
 }
 
-// ================= CEK BAN =================
 async function checkAndHandleBan() {
   const gmail = getStoredGmail();
   const userID = await getUserID();
@@ -1122,10 +922,7 @@ async function checkAndHandleBan() {
       gmailDisplay.className = 'value not-set';
     }
   }
-  if (!gmail || !validateEmail(gmail)) {
-    console.warn('⚠️ Gmail belum diatur');
-    return false;
-  }
+  if (!gmail || !validateEmail(gmail)) return false;
   const bannedData = await checkGmailBanned(gmail);
   if (bannedData) {
     showBannedPage(bannedData, userID, gmail);
@@ -1134,11 +931,8 @@ async function checkAndHandleBan() {
   return false;
 }
 
-// ================= QRIS TIMER =================
 function startQrisTimer() {
-  if (qrisTimerInterval) {
-    clearInterval(qrisTimerInterval);
-  }
+  if (qrisTimerInterval) clearInterval(qrisTimerInterval);
   
   qrisExpiryTime = Date.now() + (QRIS_EXPIRY_MINUTES * 60 * 1000);
   isQrisExpired = false;
@@ -1151,16 +945,13 @@ function startQrisTimer() {
   updateTimerDisplay();
   
   qrisTimerInterval = setInterval(function() {
-    const now = Date.now();
-    const remaining = qrisExpiryTime - now;
-    
+    const remaining = qrisExpiryTime - Date.now();
     if (remaining <= 0) {
       clearInterval(qrisTimerInterval);
       qrisTimerInterval = null;
       expireQris();
       return;
     }
-    
     updateTimerDisplay();
   }, 1000);
 }
@@ -1168,33 +959,23 @@ function startQrisTimer() {
 function updateTimerDisplay() {
   const timerEl = document.getElementById('timerTime');
   if (!timerEl) return;
-  
   if (!qrisExpiryTime) {
     timerEl.textContent = '--:--';
     return;
   }
-  
   const remaining = qrisExpiryTime - Date.now();
-  
   if (remaining <= 0) {
     timerEl.textContent = '00:00';
     timerEl.className = 'time danger';
     return;
   }
-  
   const minutes = Math.floor(remaining / 60000);
   const seconds = Math.floor((remaining % 60000) / 1000);
-  const timeStr = String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+  timerEl.textContent = String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
   
-  timerEl.textContent = timeStr;
-  
-  if (remaining < 60000) {
-    timerEl.className = 'time danger';
-  } else if (remaining < 300000) {
-    timerEl.className = 'time warning';
-  } else {
-    timerEl.className = 'time';
-  }
+  if (remaining < 60000) timerEl.className = 'time danger';
+  else if (remaining < 300000) timerEl.className = 'time warning';
+  else timerEl.className = 'time';
 }
 
 function expireQris() {
@@ -1234,14 +1015,8 @@ function regenerateQris() {
   } catch(e) {}
   
   clearPaymentState();
-  
-  try {
-    localStorage.removeItem(`discord_sent_${trx}`);
-  } catch(e) {}
-  
-  try {
-    localStorage.removeItem(`order_sent_${trx}`);
-  } catch(e) {}
+  try { localStorage.removeItem(`discord_sent_${trx}`); } catch(e) {}
+  try { localStorage.removeItem(`order_sent_${trx}`); } catch(e) {}
   
   document.getElementById('qrOverlay').style.display = 'none';
   document.getElementById('qrWrapper').classList.remove('expired');
@@ -1260,13 +1035,13 @@ function regenerateQris() {
   updateDisplay();
   startQrisTimer();
   
-  if (verificationInterval) {
-    clearInterval(verificationInterval);
-  }
+  if (verificationInterval) clearInterval(verificationInterval);
   setTimeout(() => {
     checkPaymentStatus();
     verificationInterval = setInterval(checkPaymentStatus, 10000);
   }, 2000);
+  
+  const totalBaru = normalizeTotal(finalTotal + uniqueCode + adminFee);
   
   Swal.fire({
     title: '🔄 QRIS Regenerated!',
@@ -1274,7 +1049,7 @@ function regenerateQris() {
       <div style="text-align:left;color:#ddd;font-size:14px;">
         <p>QRIS baru telah dibuat dengan:</p>
         <p><b>🔑 Kode Unik:</b> ${uniqueCode}</p>
-        <p><b>💰 Total Bayar:</b> Rp ${normalizeTotal(finalTotal + uniqueCode + adminFee).toLocaleString('id-ID')}</p>
+        <p><b>💰 Total Bayar:</b> Rp ${totalBaru.toLocaleString('id-ID')}</p>
         <p style="margin-top:8px;color:#ffaa00;">⏳ QRIS berlaku 1 jam</p>
       </div>
     `,
@@ -1284,21 +1059,14 @@ function regenerateQris() {
   });
 }
 
-// ================= SEND ORDER MASSAL KE JURAGAN SOSMED =================
-async function sendMassOrdersToJuragan() {
-  if (isOrderAlreadySent()) {
-    console.log('⏭️ Order sudah dikirim ke Juragan Sosmed, skipping...');
-    return true;
-  }
+// ===== KIRIM ORDER KE JURAGAN SOSMED VIA /api/juragan-services =====
+async function sendOrdersToJuragan() {
+  if (isOrderAlreadySent()) return true;
+  if (isSendingOrder) return false;
   
-  if (isSendingOrder) {
-    console.log('⏳ Order sedang diproses, waiting...');
-    return false;
-  }
+  const orderStatus = document.getElementById('orderStatus');
   
   if (!ordersData || ordersData.length === 0) {
-    console.warn('⚠️ Tidak ada data order massal');
-    const orderStatus = document.getElementById('orderStatus');
     orderStatus.className = 'order-status failed';
     orderStatus.textContent = '❌ Tidak ada data pesanan.';
     orderStatus.style.display = 'block';
@@ -1306,7 +1074,6 @@ async function sendMassOrdersToJuragan() {
   }
   
   isSendingOrder = true;
-  const orderStatus = document.getElementById('orderStatus');
   orderStatus.className = 'order-status loading';
   orderStatus.textContent = `⏳ Mengirim ${ordersData.length} pesanan ke Juragan Sosmed...`;
   orderStatus.style.display = 'block';
@@ -1319,50 +1086,49 @@ async function sendMassOrdersToJuragan() {
     for (let i = 0; i < ordersData.length; i++) {
       const order = ordersData[i];
       
-      // ✅ Payload ke proxy /api/juragan-order
-      // Proxy yang menambahkan key + action: 'add'
-      const payload = {
-        service: parseInt(order.serviceId),
-        link: order.target,
-        quantity: parseInt(order.jumlah)
+      // ✅ Format payload Juragan Sosmed: { key, action, service, link, quantity, comments }
+      const payloadData = {
+        action: 'add',
+        service: parseInt(order.serviceId, 10),
+        link: order.target.trim(),
+        quantity: parseInt(order.jumlah, 10)
       };
       
-      // Comments (opsional)
+      // ✅ Comments opsional — dipisah \r\n sesuai dokumentasi Juragan Sosmed
       if (order.comment && order.comment.trim() !== '') {
-        payload.comments = order.comment
+        const comments = order.comment
           .trim()
           .split(/\r?\n/)
           .filter(l => l.trim())
           .join('\r\n');
+        if (comments) payloadData.comments = comments;
       }
       
-      // Drip-feed (opsional)
-      if (order.runs) payload.runs = parseInt(order.runs);
-      if (order.interval) payload.interval = parseInt(order.interval);
-      
-      console.log(`📦 Sending order ${i+1}/${ordersData.length} via proxy:`, payload);
-      
-      const response = await fetch(JURAGAN_ORDER_URL, {
+      const response = await fetch('/api/juragan-services', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Content-Type': 'application/json'
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payloadData)
       });
       
-      const result = await response.json();
-      console.log(`📦 Response ${i+1} dari proxy:`, result);
+      let result;
+      try { 
+        result = await response.json(); 
+      } catch (e) {
+        result = { error: 'Invalid JSON response', status: response.status };
+      }
       
-      // Response proxy sukses: { status: true, order: 23501 }
-      // Response proxy gagal:  { status: false, error: "..." }
-      // Fallback juga terima format langsung dari Juragan: { order: 23501 }
-      if ((result.status === true && result.order) || result.order) {
+      // ✅ Response sukses Juragan Sosmed: { order: 23501 }
+      // Response gagal: { error: "..." } atau { msg: "..." }
+      const extractedOrderId = result.order || (result.data && result.data.order);
+
+      if (extractedOrderId) {
         successCount++;
-        orderIds.push(result.order);
-        console.log(`✅ Order #${i+1} sukses dengan ID: ${result.order}`);
+        orderIds.push(extractedOrderId);
+        console.log(`✅ Order #${i+1} sukses dengan ID: ${extractedOrderId}`);
       } else {
-        const errorMsg = result.error || result.msg || result.message || result.error_message || 'Gagal tanpa keterangan';
+        const errorMsg = result.msg || result.error || result.message || result.error_message || ('HTTP ' + response.status);
         failedOrders.push({
           index: i,
           order: order,
@@ -1370,95 +1136,79 @@ async function sendMassOrdersToJuragan() {
         });
         console.log(`❌ Order #${i+1} gagal: ${errorMsg}`);
       }
-      
       orderStatus.textContent = `⏳ Mengirim ${i+1}/${ordersData.length} pesanan... (${successCount} berhasil)`;
     }
     
+    markOrderSent();
+    
     if (successCount === ordersData.length) {
       const orderIdStr = orderIds.join(', ');
-      orderResultData = { 
-        orderIds: orderIds, 
-        message: `${successCount} pesanan berhasil dibuat.`
-      };
+      orderResultData = { orderIds, message: `${successCount} pesanan berhasil dibuat.` };
       
       orderStatus.className = 'order-status success';
       orderStatus.innerHTML = `
         ✅ ${successCount} pesanan berhasil dibuat!
         <div class="order-id-box">
           🆔 ID Pesanan: <strong>${orderIdStr}</strong>
-          <button class="copy-btn" onclick="copyOrderId('${orderIdStr}')">📋 Salin Semua</button>
+          <button class="copy-btn" onclick="copyOrderId('${orderIdStr}')">📋 Salin</button>
         </div>
         <div style="margin-top:6px;font-size:11px;color:#888;">
           ⚠️ Simpan ID pesanan ini untuk cek status order.
         </div>
       `;
       
-      markOrderSent();
-      saveOrderIds(orderIds);
       isSendingOrder = false;
       await sendMassOrderNotificationToDiscord(orderIds, successCount, failedOrders);
       
       await Swal.fire({
-        title: '✅ Semua Pesanan Berhasil!',
+        title: '🎉 Pesanan Berhasil Diproses!',
         html: `
-          <div style="text-align:left;color:#ddd;font-size:14px;">
-            <p><b>${successCount}</b> pesanan berhasil dibuat.</p>
-            <div style="background:#0d0d0d;padding:12px;border-radius:10px;margin:10px 0;border:1px solid #ffaa0033;text-align:center;">
-              <span style="color:#888;font-size:12px;">🆔 ID Pesanan</span><br>
-              <span style="color:#ffaa00;font-size:16px;font-weight:700;font-family:monospace;word-break:break-all;">${orderIdStr}</span>
-              <br>
-              <button onclick="copyOrderId('${orderIdStr}')" style="margin-top:6px;background:#ffaa0022;color:#ffaa00;border:1px solid #ffaa0044;padding:4px 16px;border-radius:6px;cursor:pointer;font-size:12px;">
-                📋 Salin Semua ID
+          <div style="text-align:center;color:#ddd;font-size:14px;">
+            <p>Transaksi Anda telah terverifikasi dan pesanan sudah diteruskan.</p>
+            <div style="background:#1e293b;padding:15px;border-radius:12px;margin:15px 0;border:1px solid #00c6ff;">
+              <span style="color:#94a3b8;font-size:12px;">ID PESANAN Anda:</span><br>
+              <span style="color:#00ffaa;font-size:22px;font-weight:800;font-family:monospace;letter-spacing:1px;">${orderIdStr}</span>
+              <br><br>
+              <button onclick="copyOrderId('${orderIdStr}')" style="background:linear-gradient(135deg,#00c6ff,#0072ff);color:#fff;border:none;padding:8px 18px;border-radius:20px;cursor:pointer;font-size:13px;font-weight:600;">
+                📋 Salin ID Pesanan
               </button>
             </div>
-            <p style="font-size:12px;color:#888;">⚠️ Simpan ID pesanan ini untuk cek status order.</p>
+            <p style="font-size:12px;color:#facc15;">⚠️ Catat atau simpan ID Pesanan di atas untuk keperluan komplain/tracking!</p>
           </div>
         `,
         icon: 'success',
-        confirmButtonColor: '#ffaa00',
-        confirmButtonText: '✅ OK, Saya Simpan'
+        confirmButtonColor: '#00c6ff',
+        confirmButtonText: '✅ Saya Sudah Menyimpannya'
       });
-      
       return true;
-      
     } else {
-      const failedMsg = failedOrders.map(f => 
-        `#${f.index+1} ${f.order.serviceName}: ${f.error}`
-      ).join('\n');
-      
+      const failedMsg = failedOrders.map(f => `#${f.index+1} ${f.order.serviceName}: ${f.error}`).join('\n');
       orderStatus.className = 'order-status failed';
       orderStatus.innerHTML = `
         ❌ ${successCount}/${ordersData.length} pesanan berhasil.<br>
         <span style="font-size:11px;color:#f87171;">Gagal: ${failedMsg}</span>
       `;
-      
-      if (orderIds.length > 0) {
-        saveOrderIds(orderIds);
-      }
-      
       isSendingOrder = false;
       await sendMassOrderNotificationToDiscord(orderIds, successCount, failedOrders);
       
       Swal.fire({
-        title: '⚠️ Sebagian Gagal',
+        title: '⚠️ Sebagian Pesanan Gagal',
         html: `
           <div style="text-align:left;color:#ddd;font-size:14px;">
-            <p>${successCount}/${ordersData.length} pesanan berhasil.</p>
-            <div style="background:#ff444415;padding:12px;border-radius:10px;margin:10px 0;border:1px solid #ff444433;">
-              <b style="color:#f87171;">Gagal:</b><br>
+            <p>Berhasil: <b>${successCount}</b> dari <b>${ordersData.length}</b> pesanan.</p>
+            ${orderIds.length > 0 ? `<p>ID Berhasil: <b style="color:#00ffaa;">${orderIds.join(', ')}</b></p>` : ''}
+            <div style="background:rgba(239,68,68,0.1);padding:12px;border-radius:10px;margin:10px 0;border:1px solid rgba(239,68,68,0.3);">
+              <b style="color:#f87171;">Detail Gagal:</b><br>
               ${failedMsg.replace(/\n/g, '<br>')}
             </div>
           </div>
         `,
         icon: 'warning',
-        confirmButtonColor: '#ffaa00'
+        confirmButtonColor: '#f59e0b'
       });
-      
       return false;
     }
-    
   } catch (err) {
-    console.error('❌ Error send mass orders:', err);
     orderStatus.className = 'order-status failed';
     orderStatus.textContent = `❌ Error: ${err.message}`;
     isSendingOrder = false;
@@ -1466,7 +1216,6 @@ async function sendMassOrdersToJuragan() {
   }
 }
 
-// ================= COPY ORDER ID =================
 window.copyOrderId = function(orderId) {
   navigator.clipboard.writeText(String(orderId)).then(() => {
     Swal.fire({
@@ -1485,19 +1234,9 @@ window.copyOrderId = function(orderId) {
     textarea.select();
     document.execCommand('copy');
     document.body.removeChild(textarea);
-    Swal.fire({
-      title: '✅ Berhasil Disalin!',
-      text: `ID Pesanan ${orderId} telah disalin.`,
-      icon: 'success',
-      timer: 2000,
-      showConfirmButton: false,
-      toast: true,
-      position: 'top-end'
-    });
   });
 };
 
-// ================= SEND MASS ORDER NOTIFICATION TO DISCORD =================
 async function sendMassOrderNotificationToDiscord(orderIds, successCount, failedOrders) {
   try {
     let orderList = '';
@@ -1506,9 +1245,7 @@ async function sendMassOrderNotificationToDiscord(orderIds, successCount, failed
     });
     
     const orderIdStr = orderIds.join(', ') || '-';
-    const failedMsg = failedOrders.length > 0 
-      ? `\n⚠️ Gagal: ${failedOrders.length} pesanan` 
-      : '';
+    const failedMsg = failedOrders.length > 0 ? `\n⚠️ Gagal: ${failedOrders.length} pesanan` : '';
     
     const message = `📦 **ORDER MASSAL JURAGAN SOSMED**
 ━━━━━━━━━━━━━━━━━━━━━
@@ -1528,23 +1265,12 @@ ${orderList}
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: message })
     });
-    console.log('✅ Notifikasi mass order ke Discord terkirim');
-  } catch (err) {
-    console.error('❌ Gagal kirim notifikasi ke Discord:', err);
-  }
+  } catch (err) {}
 }
 
-// ================= SEND TO DISCORD (PAYMENT) =================
 async function sendToDiscord(gmail, userID) {
-  if (isDiscordAlreadySent()) {
-    console.log('⏭️ Discord notification already sent, skipping...');
-    return true;
-  }
-  
-  if (isSendingDiscord) {
-    console.log('⏳ Discord notification is being sent, waiting...');
-    return false;
-  }
+  if (isDiscordAlreadySent()) return true;
+  if (isSendingDiscord) return false;
   
   isSendingDiscord = true;
   
@@ -1562,10 +1288,7 @@ async function sendToDiscord(gmail, userID) {
       orderList = `\n  ${o.serviceName} (ID: ${o.serviceId}) x${o.jumlah} → ${o.target}`;
     }
     
-    let adminFeeText = '';
-    if (adminFee > 0) {
-      adminFeeText = `\n📊 **Biaya Admin (2%):** Rp ${adminFee.toLocaleString('id-ID')}`;
-    }
+    let adminFeeText = adminFee > 0 ? `\n📊 **Biaya Admin (1%):** Rp ${adminFee.toLocaleString('id-ID')}` : '';
     
     const message = `💰 **PEMBAYARAN BERHASIL DIVERIFIKASI**
 ━━━━━━━━━━━━━━━━━━━━━
@@ -1593,64 +1316,39 @@ ${orderList || '  -'}
     
     if (response.ok) {
       markDiscordSent();
-      console.log('✅ Notifikasi Discord terkirim (1×)');
       isSendingDiscord = false;
       return true;
     } else {
-      console.error('❌ Gagal kirim ke Discord:', response.status);
       isSendingDiscord = false;
       return false;
     }
   } catch (err) {
-    console.error('❌ Error kirim ke Discord:', err);
     isSendingDiscord = false;
     return false;
   }
 }
 
-// ================= IS TRANSACTION VALID =================
 function isTransactionValid(transaction, targetAmount) {
   targetAmount = Math.ceil(Number(targetAmount) || 0);
   
   let rawAmount = String(transaction.amount || '');
-  let cleanAmount = rawAmount.replace(/[^0-9]/g, '');
-  let amountNumber = parseInt(cleanAmount) || 0;
+  let amountNumber = parseInt(rawAmount.replace(/[^0-9]/g, ''), 10) || 0;
   
-  if (amountNumber !== targetAmount) {
-    console.log('❌ Nominal tidak match:', amountNumber, 'vs', targetAmount);
-    return false;
-  }
-  
-  if (transaction.type !== 'CR' && transaction.type !== 'credit' && transaction.type !== 'Credit') {
-    console.log('❌ Tipe transaksi bukan CR:', transaction.type);
-    return false;
-  }
+  if (amountNumber !== targetAmount) return false;
+  if (!['CR', 'credit', 'Credit'].includes(transaction.type)) return false;
   
   if (transaction.time) {
     try {
       const txTime = new Date(transaction.time);
-      const now = new Date();
-      const diffMinutes = (now - txTime) / 1000 / 60;
-      
-      if (diffMinutes > 120) {
-        console.log('❌ Transaksi terlalu lama:', diffMinutes, 'menit');
-        return false;
-      }
-    } catch (e) {
-      console.warn('⚠️ Gagal parse waktu transaksi:', transaction.time);
-    }
+      const diffMinutes = (new Date() - txTime) / 1000 / 60;
+      if (diffMinutes > 120) return false;
+    } catch (e) {}
   }
-  
-  console.log('✅ Transaksi valid!');
   return true;
 }
 
-// ================= CHECK PAYMENT VIA QIOSPAY =================
 async function checkPaymentStatus() {
-  if (isProcessingPayment) {
-    console.log('⏳ Payment check already running...');
-    return;
-  }
+  if (isProcessingPayment) return;
   
   const statusEl = document.getElementById('paymentStatus');
   const confirmBtn = document.getElementById('confirmBtn');
@@ -1665,11 +1363,9 @@ async function checkPaymentStatus() {
   const savedState = getPaymentState();
   if (savedState && savedState.verified === true && savedState.verifiedAt) {
     const verifiedAt = new Date(savedState.verifiedAt).getTime();
-    const now = Date.now();
-    const diffMinutes = (now - verifiedAt) / 1000 / 60;
+    const diffMinutes = (Date.now() - verifiedAt) / 1000 / 60;
     
     if (diffMinutes < 60) {
-      console.log('✅ Payment already verified (from state, valid)');
       isPaymentVerified = true;
       transactionLocked = true;
       statusEl.className = 'payment-status success';
@@ -1679,35 +1375,17 @@ async function checkPaymentStatus() {
       confirmBtn.textContent = '✅ Pembayaran Terverifikasi';
       
       if (savedState.orderSent === false && ordersData.length > 0) {
-        console.log('📦 Sending orders from saved state...');
-        await sendMassOrdersToJuragan();
+        await sendOrdersToJuragan();
         savedState.orderSent = true;
         savePaymentState(savedState);
       }
       return;
     } else {
-      console.log('⚠️ State expired, re-verifying...');
       clearPaymentState();
     }
   }
   
-  if (isPaymentVerified) {
-    statusEl.className = 'payment-status success';
-    statusEl.textContent = '✅ Pembayaran sudah terverifikasi!';
-    statusEl.style.display = 'block';
-    return;
-  }
-  
-  if (checkTransactionLockLocal()) {
-    isPaymentVerified = true;
-    statusEl.className = 'payment-status success';
-    statusEl.textContent = '✅ Transaksi sudah dikonfirmasi sebelumnya!';
-    statusEl.style.display = 'block';
-    savePaymentState({ verified: true, orderSent: isOrderAlreadySent(), verifiedAt: new Date().toISOString() });
-    return;
-  }
-  
-  if (isDiscordAlreadySent()) {
+  if (isPaymentVerified || checkTransactionLockLocal() || isDiscordAlreadySent()) {
     isPaymentVerified = true;
     statusEl.className = 'payment-status success';
     statusEl.textContent = '✅ Pembayaran sudah terverifikasi!';
@@ -1722,7 +1400,7 @@ async function checkPaymentStatus() {
     await fetchConfigFromEnv();
     if (!QIOSPAY_API_KEY) {
       statusEl.className = 'payment-status failed';
-      statusEl.textContent = '❌ Gagal mengambil konfigurasi API';
+      statusEl.textContent = '❌ Konfigurasi API tidak tersedia';
       statusEl.style.display = 'block';
       return;
     }
@@ -1754,27 +1432,17 @@ async function checkPaymentStatus() {
     
     console.log('💰 Nominal yang dicek ke QIOSPAY:', totalBayar);
     
-    const url = QIOSPAY_MUTASI_URL();
-    console.log('📡 Fetching mutasi dari QIOSPAY...');
-    
-    const res = await fetch(url + '?t=' + Date.now());
-    
-    if (!res.ok) {
-      throw new Error('Gagal mengambil data mutasi: ' + res.status);
-    }
+    const res = await fetch(QIOSPAY_MUTASI_URL() + '?t=' + Date.now());
+    if (!res.ok) throw new Error('Gagal koneksi mutasi: ' + res.status);
     
     const data = await res.json();
-    console.log('📊 Data Mutasi QIOSPAY:', data);
-    
     let foundTransaction = null;
     
     if (data.status === 'success' && data.data) {
       const transactions = Array.isArray(data.data) ? data.data : [data.data];
-      
       for (const t of transactions) {
         if (isTransactionValid(t, totalBayar)) {
           foundTransaction = t;
-          console.log('✅ Transaksi ditemukan dan valid:', t);
           break;
         }
       }
@@ -1795,26 +1463,22 @@ async function checkPaymentStatus() {
       });
       
       const sent = await sendToDiscord(gmail, userID);
-      
       if (sent && ordersData.length > 0) {
-        await sendMassOrdersToJuragan();
+        await sendOrdersToJuragan();
         const currentState = getPaymentState();
         if (currentState) {
           currentState.orderSent = true;
           savePaymentState(currentState);
         }
         saveTransactionLockLocal();
-        console.log('🔒 Transaksi locked');
       }
       
       confirmBtn.disabled = true;
       confirmBtn.textContent = '✅ Pembayaran Terverifikasi';
-      
       if (verificationInterval) {
         clearInterval(verificationInterval);
         verificationInterval = null;
       }
-      
     } else {
       verificationAttempts++;
       statusEl.className = 'payment-status loading';
@@ -1822,19 +1486,15 @@ async function checkPaymentStatus() {
       confirmBtn.disabled = false;
       confirmBtn.textContent = '✅ Cek Status Pembayaran';
     }
-    
   } catch (err) {
-    console.error('Error cek payment:', err);
     statusEl.className = 'payment-status failed';
     statusEl.textContent = '❌ Gagal mengecek pembayaran: ' + err.message;
     confirmBtn.disabled = false;
     confirmBtn.textContent = '✅ Cek Status Pembayaran';
   }
-  
   isProcessingPayment = false;
 }
 
-// ================= LOCK LOCAL STORAGE =================
 function checkTransactionLockLocal() {
   try {
     const confirmed = JSON.parse(localStorage.getItem('confirmed_transactions') || '[]');
@@ -1849,10 +1509,9 @@ function saveTransactionLockLocal() {
       confirmed.push(trx);
       localStorage.setItem('confirmed_transactions', JSON.stringify(confirmed));
     }
-  } catch(e) { console.error("Gagal simpan lock:", e); }
+  } catch(e) {}
 }
 
-// ================= VOUCHER SYSTEM =================
 function getUsedVouchers() {
   try { return JSON.parse(localStorage.getItem('used_vouchers_' + trx) || '[]'); } 
   catch { return []; }
@@ -1865,14 +1524,13 @@ function markVoucherUsed(code) {
       used.push(code);
       localStorage.setItem('used_vouchers_' + trx, JSON.stringify(used));
     }
-  } catch(e) { console.error("Gagal simpan voucher used:", e); }
+  } catch(e) {}
 }
 
 function isVoucherUsed(code) {
   return getUsedVouchers().includes(code);
 }
 
-// ================= QRIS =================
 function crc16(s){
   let c=0xFFFF;
   for(let i=0;i<s.length;i++){
@@ -1885,13 +1543,12 @@ function crc16(s){
 }
 
 function buildQR(a){
-  const str=String(parseInt(a));
+  const str=String(parseInt(a, 10));
   const tag="54"+String(str.length).padStart(2,"0")+str;
   const base="00020101021126670016COM.NOBUBANK.WWW01189360050300000907180214260818000016290303UMI51440014ID.CO.QRIS.WWW0215ID10265728797100303UMI5204481253033605802ID5918SHINE SHOP ID CELL6008SURABAYA61056011162070703A016304743A";
   return base+tag+"6304"+crc16(base+tag+"6304");
 }
 
-// ================= UPDATE DISPLAY =================
 function updateDisplay(){
   uniqueCode = generateUniqueCode();
   document.getElementById('uniqueCode').textContent = uniqueCode;
@@ -1913,7 +1570,6 @@ function updateDisplay(){
     ordersData.forEach((o, i) => {
       detailHtml += `<div class="order-item-detail">
         ${i+1}. ${o.serviceName} (ID: ${o.serviceId}) x${o.jumlah.toLocaleString('id-ID')} → ${o.target}
-        ${o.comment ? ` 📝 komentar: ${o.comment.split('\n').filter(l=>l.trim()).length} baris` : ''}
       </div>`;
     });
   } else if (!isMass && ordersData.length === 1) {
@@ -1923,7 +1579,6 @@ function updateDisplay(){
     <strong>Service ID:</strong> ${o.serviceId}<br>
     <strong>Target:</strong> ${o.target}<br>
     <strong>Jumlah:</strong> ${o.jumlah.toLocaleString('id-ID')}<br>
-    ${o.comment ? `<strong>📝 Komentar:</strong> ${o.comment}<br>` : ''}
     `;
   }
   
@@ -1932,11 +1587,10 @@ function updateDisplay(){
   }
   
   if (adminFee > 0) {
-    detailHtml += `<strong>📊 Biaya Admin 2%:</strong> <span class="admin-fee-text">Rp ${adminFee.toLocaleString("id-ID")}</span><br>`;
+    detailHtml += `<strong>📊 Biaya Admin 1%:</strong> <span class="admin-fee-text">Rp ${adminFee.toLocaleString("id-ID")}</span><br>`;
   }
   
   detailHtml += `<strong>Total Bayar:</strong> Rp ${totalDenganUnik.toLocaleString("id-ID")}`;
-  
   document.getElementById('orderDetails').innerHTML = detailHtml;
   
   QRCode.toCanvas(document.getElementById('qrisCanvas'), buildQR(totalDenganUnik), { width:240 }, function(err){
@@ -1952,25 +1606,20 @@ function updateDisplay(){
       ctx.fillRect(x-5,y-5,size+10,size+10);
       ctx.drawImage(logo,x,y,size,size);
     };
-    logo.onerror = function(){
-      console.warn('Logo tidak ditemukan, melanjutkan tanpa logo');
-    };
   });
   
   console.log('🔄 QRIS & nominal cek di-update ke:', totalDenganUnik);
 }
 
-// ================= LOAD VOUCHER =================
 async function loadVoucher(){
   try{
-    const r = await fetch("/sosmed-1/payment/voucher.json",{cache:"no-store"});
+    const r = await fetch("/sosmed-3/payment/voucher.json",{cache:"no-store"});
     if(!r.ok) return [];
     const data = await r.json();
     return Array.isArray(data) ? data : [];
   }catch{return []}
 }
 
-// ================= APPLY VOUCHER =================
 document.getElementById('applyVoucher').onclick = async function() {
   const code = document.getElementById('voucherInput').value.trim().toUpperCase();
   if(!code) return Swal.fire("Isi kode voucher","","warning");
@@ -1978,9 +1627,8 @@ document.getElementById('applyVoucher').onclick = async function() {
   if (isVoucherUsed(code)) {
     return Swal.fire({
       title: "❌ Voucher Sudah Dipakai",
-      text: `Kode voucher "${code}" sudah digunakan untuk transaksi ini. Hanya bisa digunakan 1×.`,
-      icon: "error",
-      confirmButtonColor: "#22c55e"
+      text: `Kode voucher "${code}" sudah digunakan untuk transaksi ini.`,
+      icon: "error"
     });
   }
   
@@ -1992,13 +1640,11 @@ document.getElementById('applyVoucher').onclick = async function() {
   const v = list.find(x => x.code && x.code.toUpperCase() === code);
   if(!v) return Swal.fire("❌ Voucher tidak valid","","error");
   
-  const minPurchase = v.min_purchase || 0;
-  if (originalTotal < minPurchase) {
+  if (originalTotal < (v.min_purchase || 0)) {
     return Swal.fire({
       title: "❌ Minimal Pembelian",
-      text: `Minimal pembelian untuk voucher ini adalah Rp ${minPurchase.toLocaleString("id-ID")}`,
-      icon: "warning",
-      confirmButtonColor: "#22c55e"
+      text: `Minimal pembelian voucher ini adalah Rp ${(v.min_purchase||0).toLocaleString("id-ID")}`,
+      icon: "warning"
     });
   }
   
@@ -2019,17 +1665,9 @@ document.getElementById('applyVoucher').onclick = async function() {
   
   markVoucherUsed(v.code);
   
-  let discountText = `Rp ${discount.toLocaleString("id-ID")}`;
-  if (v.type === "percent") {
-    discountText += ` (${v.value}% dari total)`;
-  }
-  
-  document.getElementById('voucherStatus').innerHTML = `<span class="active">✅ Voucher ${v.code} berhasil digunakan! Diskon: ${discountText}</span>`;
-  
+  document.getElementById('voucherStatus').innerHTML = `<span class="active">✅ Voucher ${v.code} berhasil digunakan! Diskon: Rp ${discount.toLocaleString('id-ID')}</span>`;
   document.getElementById('voucherInput').disabled = true;
-  document.getElementById('voucherInput').style.opacity = '0.4';
   this.disabled = true;
-  this.style.opacity = '0.4';
   
   updateDisplay();
   
@@ -2040,18 +1678,16 @@ document.getElementById('applyVoucher').onclick = async function() {
   
   Swal.fire({
     title: "✅ Berhasil!",
-    html: `Voucher <b>${v.code}</b> berhasil digunakan!<br>Diskon: <b>${discountText}</b><br><span style="color:#888;font-size:12px;">QRIS & nominal cek otomatis diperbarui.</span>`,
+    html: `Voucher <b>${v.code}</b> berhasil digunakan!<br>Diskon: <b>Rp ${discount.toLocaleString('id-ID')}</b><br><span style="color:#888;font-size:12px;">QRIS & nominal cek otomatis diperbarui.</span>`,
     icon: "success",
     confirmButtonColor: "#22c55e"
   });
 };
 
-// ================= CONFIRM BUTTON =================
 document.getElementById('confirmBtn').onclick = function() {
   checkPaymentStatus();
 };
 
-// ================= REGENERATE BUTTON =================
 document.getElementById('regenerateBtn').onclick = function() {
   Swal.fire({
     title: '🔄 Generate Ulang QRIS?',
@@ -2064,23 +1700,18 @@ document.getElementById('regenerateBtn').onclick = function() {
           <li>⏳ QRIS berlaku <b>1 jam</b> lagi</li>
           <li>💰 Nominal tetap <b>Rp ${normalizeTotal(finalTotal + adminFee).toLocaleString('id-ID')} + kode unik</b></li>
         </ul>
-        <p style="margin-top:8px;color:#ffaa00;">📌 Kode unik akan berbeda dari sebelumnya</p>
       </div>
     `,
     icon: 'warning',
     showCancelButton: true,
     confirmButtonText: '✅ Ya, Generate Ulang',
     cancelButtonText: '❌ Batal',
-    confirmButtonColor: '#f59e0b',
-    cancelButtonColor: '#666'
+    confirmButtonColor: '#f59e0b'
   }).then((result) => {
-    if (result.isConfirmed) {
-      regenerateQris();
-    }
+    if (result.isConfirmed) regenerateQris();
   });
 };
 
-// ================= INIT =================
 (async function() {
   await fetchConfigFromEnv();
   configLoaded = true;
@@ -2091,133 +1722,32 @@ document.getElementById('regenerateBtn').onclick = function() {
   const savedState = getPaymentState();
   if (savedState && savedState.verified === true && savedState.verifiedAt) {
     const verifiedAt = new Date(savedState.verifiedAt).getTime();
-    const now = Date.now();
-    const diffMinutes = (now - verifiedAt) / 1000 / 60;
-    
-    if (diffMinutes < 60) {
-      console.log('✅ Restoring verified state (valid)');
+    if ((Date.now() - verifiedAt) / 1000 / 60 < 60) {
       isPaymentVerified = true;
       transactionLocked = true;
-      const btn = document.getElementById('confirmBtn');
-      btn.disabled = true;
-      btn.textContent = '✅ Pembayaran Terverifikasi';
+      document.getElementById('confirmBtn').disabled = true;
+      document.getElementById('confirmBtn').textContent = '✅ Pembayaran Terverifikasi';
       document.getElementById('paymentStatus').className = 'payment-status success';
       document.getElementById('paymentStatus').textContent = '✅ Pembayaran sudah terverifikasi!';
       document.getElementById('paymentStatus').style.display = 'block';
-      
-      if (savedState.orderSent === false && ordersData.length > 0) {
-        console.log('📦 Sending orders from saved state on init...');
-        await sendMassOrdersToJuragan();
-        savedState.orderSent = true;
-        savePaymentState(savedState);
-      }
-      
-      displayStoredOrderIds();
       return;
     } else {
-      console.log('⚠️ State expired, clearing...');
       clearPaymentState();
     }
   }
   
-  if (checkTransactionLockLocal()) {
-    transactionLocked = true;
-    isPaymentVerified = true;
-    const btn = document.getElementById('confirmBtn');
-    btn.disabled = true;
-    btn.textContent = '✅ Transaksi Sudah Dikonfirmasi';
-    document.getElementById('paymentStatus').className = 'payment-status success';
-    document.getElementById('paymentStatus').textContent = '✅ Pembayaran sudah terverifikasi!';
-    document.getElementById('paymentStatus').style.display = 'block';
-    savePaymentState({ verified: true, orderSent: isOrderAlreadySent(), verifiedAt: new Date().toISOString() });
-    displayStoredOrderIds();
-    return;
-  }
-  
-  if (isDiscordAlreadySent()) {
-    isPaymentVerified = true;
-    const btn = document.getElementById('confirmBtn');
-    btn.disabled = true;
-    btn.textContent = '✅ Pembayaran Terverifikasi';
-    document.getElementById('paymentStatus').className = 'payment-status success';
-    document.getElementById('paymentStatus').textContent = '✅ Pembayaran sudah terverifikasi!';
-    document.getElementById('paymentStatus').style.display = 'block';
-    savePaymentState({ verified: true, orderSent: isOrderAlreadySent(), verifiedAt: new Date().toISOString() });
-    displayStoredOrderIds();
-    return;
-  }
-  
-  const usedVouchers = getUsedVouchers();
-  if (usedVouchers.length > 0) {
-    const lastUsed = usedVouchers[usedVouchers.length - 1];
-    document.getElementById('voucherStatus').innerHTML = `<span class="used">⚠️ Voucher ${lastUsed} sudah digunakan untuk transaksi ini (1×)</span>`;
-    document.getElementById('voucherInput').disabled = true;
-    document.getElementById('voucherInput').style.opacity = '0.4';
-    document.getElementById('applyVoucher').disabled = true;
-    document.getElementById('applyVoucher').style.opacity = '0.4';
-  }
-  
-  console.log('📦 Orders data:', ordersData);
-  console.log('📊 Is Mass:', isMass);
-  
   updateDisplay();
-  displayStoredOrderIds();
   startQrisTimer();
   
   setTimeout(() => {
     checkPaymentStatus();
     verificationInterval = setInterval(checkPaymentStatus, 10000);
   }, 3000);
-  
-  window.addEventListener('beforeunload', function() {
-    if (isPaymentVerified) {
-      savePaymentState({ verified: true, orderSent: isOrderAlreadySent(), verifiedAt: new Date().toISOString() });
-    }
-  });
 })();
 
-// ================= REFERRAL =================
-function ambilReferral() {
-  const savedRef = localStorage.getItem('referral_code');
-  const statusElement = document.getElementById('status-ref');
-  if (statusElement) {
-    if (savedRef) {
-      statusElement.innerHTML = `Terdeteksi! Kode referral Anda adalah: <strong>${savedRef}</strong>`;
-    } else {
-      statusElement.innerHTML = `Tidak ada kode referral yang tersimpan.`;
-    }
-  }
-  return savedRef;
-}
-ambilReferral();
-
-// ================= ANTI DEVTOOLS =================
-document.addEventListener("keydown", function(e){
-  if(e.key === "F12") e.preventDefault();
-  if(e.ctrlKey && e.shiftKey && ["I","J"].includes(e.key)) e.preventDefault();
-  if(e.ctrlKey && e.key === "u") e.preventDefault();
-});
-
-setInterval(() => {
-  const threshold = 160;
-  if (window.devtoolsOpen) return;
-  const widthThreshold = window.outerWidth - window.innerWidth > threshold;
-  if (widthThreshold && !/Android|iPhone|iPad/i.test(navigator.userAgent)) {
-    document.body.innerHTML = "<h1 style='color:gold;text-align:center;margin-top:40vh;'>🚫 Developer Tools Terdeteksi</h1>";
-  }
-}, 2000);
-
-console.log('💳 QRIS Payment - Sosmed 4 siap!');
-console.log('📦 Mass order:', isMass, ordersData.length, 'items');
-console.log('📧 Gmail diambil dari localStorage');
-console.log('✅ Auto-verifikasi QRIS aktif (cek setiap 10 detik)');
-console.log('⏳ QRIS Expiry:', QRIS_EXPIRY_MINUTES, 'menit');
-console.log('🔄 Regenerate QRIS tersedia setelah expired');
-console.log('💾 URL params & Order IDs tersimpan di localStorage');
-console.log('🔢 Semua nominal dibulatkan ke atas (integer) — voucher & tanpa voucher');
-console.log('📦 Provider order: JURAGAN SOSMED via proxy /api/juragan-order');
-console.log('⛔ Data banned Gmail diambil dari GitHub raw');
-console.log('✅ Response handling: { status: true, order: 23501 }');
+console.log('💳 QRIS Payment - Shine Shop siap!');
+console.log('📦 Provider order: JURAGAN SOSMED (djuragansosmed.com)');
+console.log('✅ Response handling: { order: 23501 }');
 </script>
 </body>
 </html>
