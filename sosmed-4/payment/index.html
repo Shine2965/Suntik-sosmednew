@@ -550,7 +550,7 @@ p.alert-text{
   <h2>💳 Pembayaran QRIS</h2>
   <p class="alert-text"><b>Jangan tutup halaman saat sedang melakukan pembayaran atau pembayaran terverifikasi sampai muncul pop up id pesanan</b></p>
   
-  <div class="subtitle">✦ Shine Shop - Sosmed 4 ✦</div>
+  <div class="subtitle">✦ Shine Shop - Sosmed 1 ✦</div>
   
   <!-- GMAIL DISPLAY -->
   <div class="gmail-display">
@@ -1059,10 +1059,16 @@ function regenerateQris() {
   });
 }
 
-// ===== KIRIM ORDER KE JURAGAN SOSMED VIA /api/juragan-services =====
+// ===== KIRIM ORDER KE JURAGAN SOSMED VIA /api/juragan =====
 async function sendOrdersToJuragan() {
-  if (isOrderAlreadySent()) return true;
-  if (isSendingOrder) return false;
+  if (isOrderAlreadySent()) {
+    console.log('⏭️ Order sudah dikirim ke Juragan Sosmed, skipping...');
+    return true;
+  }
+  if (isSendingOrder) {
+    console.log('⏳ Order sedang diproses, waiting...');
+    return false;
+  }
   
   const orderStatus = document.getElementById('orderStatus');
   
@@ -1086,7 +1092,8 @@ async function sendOrdersToJuragan() {
     for (let i = 0; i < ordersData.length; i++) {
       const order = ordersData[i];
       
-      // ✅ Format payload Juragan Sosmed: { key, action, service, link, quantity, comments }
+      // ✅ Payload Juragan Sosmed: { action, service, link, quantity, comments }
+      // API key disuntik di backend /api/juragan
       const payloadData = {
         action: 'add',
         service: parseInt(order.serviceId, 10),
@@ -1104,11 +1111,11 @@ async function sendOrdersToJuragan() {
         if (comments) payloadData.comments = comments;
       }
       
-      const response = await fetch('/api/juragan-services', {
+      console.log(`📦 Sending order ${i+1}/${ordersData.length} ke Juragan:`, payloadData);
+      
+      const response = await fetch('/api/juragan', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payloadData)
       });
       
@@ -1118,6 +1125,8 @@ async function sendOrdersToJuragan() {
       } catch (e) {
         result = { error: 'Invalid JSON response', status: response.status };
       }
+      
+      console.log(`📦 Response ${i+1} dari Juragan Sosmed:`, result);
       
       // ✅ Response sukses Juragan Sosmed: { order: 23501 }
       // Response gagal: { error: "..." } atau { msg: "..." }
@@ -1209,6 +1218,7 @@ async function sendOrdersToJuragan() {
       return false;
     }
   } catch (err) {
+    console.error('❌ Error send orders:', err);
     orderStatus.className = 'order-status failed';
     orderStatus.textContent = `❌ Error: ${err.message}`;
     isSendingOrder = false;
@@ -1730,6 +1740,13 @@ document.getElementById('regenerateBtn').onclick = function() {
       document.getElementById('paymentStatus').className = 'payment-status success';
       document.getElementById('paymentStatus').textContent = '✅ Pembayaran sudah terverifikasi!';
       document.getElementById('paymentStatus').style.display = 'block';
+      
+      // ✅ Kirim order kalau belum dikirim (resume dari state)
+      if (savedState.orderSent === false && ordersData.length > 0) {
+        await sendOrdersToJuragan();
+        savedState.orderSent = true;
+        savePaymentState(savedState);
+      }
       return;
     } else {
       clearPaymentState();
@@ -1748,6 +1765,7 @@ document.getElementById('regenerateBtn').onclick = function() {
 console.log('💳 QRIS Payment - Shine Shop siap!');
 console.log('📦 Provider order: JURAGAN SOSMED (djuragansosmed.com)');
 console.log('✅ Response handling: { order: 23501 }');
+console.log('✅ Endpoint order: /api/juragan');
 </script>
 </body>
 </html>
