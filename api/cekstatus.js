@@ -62,7 +62,7 @@ export default async function handler(req, res) {
     return res.status(200).json(data);
 
   } catch (error) {
-    console.error('Error Cek Status Juragan Sosmed:', error);
+    console.error('❌ Error Cek Status Juragan Sosmed:', error);
     return res.status(500).json({ status: false, message: 'Terjadi kesalahan pada server' });
   }
 }
