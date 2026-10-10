@@ -1,145 +1,158 @@
-// juragan-sosmed-services
+// juragan-sosmed-order
+// Proxy endpoint untuk menempatkan order ke Djuragan Sosmed
+// Hindari CORS + sembunyikan API key di client
 
 export default async function handler(req, res) {
-    // CORS
+    // ===== CORS =====
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
 
-    // Support GET dan POST
-    if (req.method !== 'GET' && req.method !== 'POST') {
+    // Hanya terima POST
+    if (req.method !== 'POST') {
         return res.status(405).json({
             status: false,
-            msg: 'Method not allowed. Use GET or POST'
+            error: 'Method not allowed. Use POST'
         });
     }
 
     try {
-        // ===== AMBIL API KEY DARI ENV =====
+        // ===== API KEY DARI ENV =====
         const apiKey = process.env.JURAGAN_API_KEY || '5a675b8b637f08969edd6322edc4dd2a';
 
         if (!apiKey) {
             console.error('❌ JURAGAN_API_KEY tidak ditemukan di environment');
             return res.status(500).json({
                 status: false,
-                msg: 'Konfigurasi API belum lengkap (JURAGAN_API_KEY missing)'
+                error: 'Konfigurasi API belum lengkap (JURAGAN_API_KEY missing)'
             });
         }
 
-        // ===== FETCH BALANCE & SERVICES secara Paralel =====
-        const [resBalance, resServices] = await Promise.all([
-            fetch('https://djuragansosmed.com/api/v2', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                body: JSON.stringify({ key: apiKey, action: 'balance' })
-            }).catch(() => null),
-            fetch('https://djuragansosmed.com/api/v2', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                body: JSON.stringify({ key: apiKey, action: 'services' })
-            }).catch(() => null)
-        ]);
+        // ===== AMBIL BODY =====
+        const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
 
-        // ===== PARSE BALANCE =====
-        let userBalance = 0;
-        if (resBalance && resBalance.ok) {
-            const balanceData = await resBalance.json().catch(() => null);
-            if (balanceData && balanceData.balance) {
-                userBalance = parseFloat(balanceData.balance) || 0;
-            }
-        }
+        const {
+            service,      // Service ID (wajib)
+            link,         // Target link (wajib)
+            quantity,     // Jumlah (wajib)
+            comments,     // Komentar (opsional) - string dipisah \r\n
+            runs,         // Drip-feed runs (opsional)
+            interval      // Drip-feed interval menit (opsional)
+        } = body;
 
-        // ===== PARSE SERVICES =====
-        if (!resServices || !resServices.ok) {
-            const text = resServices ? await resServices.text().catch(() => '') : '';
-            console.error('❌ Juragan Sosmed API HTTP error:', resServices?.status, text);
-            return res.status(502).json({
+        // ===== VALIDASI =====
+        if (!service || !link || !quantity) {
+            return res.status(400).json({
                 status: false,
-                msg: 'Gagal menghubungi provider Juragan Sosmed'
+                error: 'Parameter wajib: service, link, quantity'
             });
         }
 
-        const data = await resServices.json();
+        const serviceId = parseInt(service);
+        const qty = parseInt(quantity);
 
-        // ===== VALIDASI RESPONSE LAYANAN =====
-        if (!Array.isArray(data)) {
-            console.error('❌ Juragan Sosmed response invalid:', data);
-            return res.status(502).json({
+        if (isNaN(serviceId) || serviceId <= 0) {
+            return res.status(400).json({
                 status: false,
-                msg: 'Respon provider tidak valid'
+                error: 'Service ID tidak valid'
             });
         }
 
-        // ===== GROUP BY CATEGORY + MARKUP 25% (1.25) =====
-        const grouped = {};
-        const MARKUP = 1.12;
-
-        for (const s of data) {
-            const category = (s.category || 'Lainnya').trim() || 'Lainnya';
-            if (!grouped[category]) {
-                grouped[category] = [];
-            }
-
-            const type = (s.type || 'default').toLowerCase();
-            const name = (s.name || '').toLowerCase();
-            const needsComment =
-                type.includes('comment') ||
-                type === 'custom_comment' ||
-                type === 'comment_likes' ||
-                type === 'comment_reply' ||
-                name.includes('comment') ||
-                name.includes('komentar') ||
-                name.includes('custom');
-
-            const rawPrice = Number(s.rate) || 0;
-            const markedUpPrice = Math.round(rawPrice * MARKUP);
-
-            grouped[category].push({
-                id: s.service,
-                name: s.name || `Service #${s.service}`,
-                pricePerFollower: markedUpPrice,
-                rawRate: rawPrice, // Harga asli modal dari Juragan Sosmed
-                diskon: null,
-                min: Number(s.min) || 1,
-                max: Number(s.max) || 1000000,
-                average: '-',
-                desc: '',
-                comment: needsComment,
-                type: s.type || 'default',
-                refill: s.refill === true || s.refill === 1,
-                rate: s.rate || 0
+        if (isNaN(qty) || qty <= 0) {
+            return res.status(400).json({
+                status: false,
+                error: 'Quantity tidak valid'
             });
         }
 
-        // ===== URUTKAN KATEGORI & LAYANAN =====
-        const sortedServices = {};
-        Object.keys(grouped)
-            .sort((a, b) => a.localeCompare(b, 'id'))
-            .forEach((cat) => {
-                sortedServices[cat] = grouped[cat].sort((a, b) =>
-                    String(a.name).localeCompare(String(b.name), 'id')
-                );
+        if (typeof link !== 'string' || link.trim().length < 5) {
+            return res.status(400).json({
+                status: false,
+                error: 'Link tidak valid'
             });
+        }
 
-        // ===== CACHE =====
-        res.setHeader('Cache-Control', 's-maxage=30, stale-while-revalidate=60');
+        // ===== BUILD PAYLOAD SESUAI DOKUMENTASI JURAGAN =====
+        const payload = {
+            key: apiKey,
+            action: 'add',
+            service: serviceId,
+            link: link.trim(),
+            quantity: qty
+        };
 
-        // Mengembalikan object berupa data layanan dan saldo backend saat ini
-        return res.status(200).json({
-            status: true,
-            balance: userBalance,
-            services: sortedServices
+        // Comments (opsional)
+        if (comments && typeof comments === 'string' && comments.trim() !== '') {
+            payload.comments = comments
+                .trim()
+                .split(/\r?\n/)
+                .filter(l => l.trim())
+                .join('\r\n');
+        }
+
+        // Drip-feed (opsional)
+        if (runs !== undefined && runs !== null && runs !== '') {
+            const r = parseInt(runs);
+            if (!isNaN(r) && r > 0) payload.runs = r;
+        }
+        if (interval !== undefined && interval !== null && interval !== '') {
+            const i = parseInt(interval);
+            if (!isNaN(i) && i > 0) payload.interval = i;
+        }
+
+        console.log('📦 Mengirim order ke Juragan Sosmed:', {
+            service: payload.service,
+            link: payload.link,
+            quantity: payload.quantity,
+            hasComments: !!payload.comments,
+            runs: payload.runs || null,
+            interval: payload.interval || null
+        });
+
+        // ===== KIRIM KE JURAGAN SOSMED =====
+        const response = await fetch('https://djuragansosmed.com/api/v2', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json().catch(() => null);
+
+        console.log('📦 Response Juragan:', result);
+
+        // ===== HANDLE RESPONSE =====
+        // Sukses: { "order": 23501 }
+        if (result && result.order) {
+            return res.status(200).json({
+                status: true,
+                order: result.order,
+                message: 'Order berhasil dibuat'
+            });
+        }
+
+        // Gagal: { "error": "..." } atau { "msg": "..." }
+        const errorMsg =
+            (result && (result.error || result.msg || result.message || result.error_message)) ||
+            `Gagal membuat order (HTTP ${response.status})`;
+
+        return res.status(400).json({
+            status: false,
+            error: errorMsg,
+            raw: result || null
         });
 
     } catch (error) {
-        console.error('❌ Error juragan-sosmed-services:', error);
+        console.error('❌ Error juragan-sosmed-order:', error);
         return res.status(500).json({
             status: false,
-            msg: 'Internal server error: ' + (error.message || '')
+            error: 'Internal server error: ' + (error.message || '')
         });
     }
 }
