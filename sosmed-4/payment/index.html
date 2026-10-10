@@ -1349,9 +1349,9 @@ async function sendMassOrdersToJuragan() {
       // ✅ Format payload Juragan Sosmed: { key, action, service, target, quantity }
       const payload = {
         key: JURAGAN_API_KEY,
-        action: 'order',
+        action: 'add',
         service: parseInt(order.serviceId),
-        target: order.target,
+        link: order.target,
         quantity: parseInt(order.jumlah)
       };
       
