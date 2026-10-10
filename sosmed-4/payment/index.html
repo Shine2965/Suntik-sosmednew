@@ -609,20 +609,22 @@ p{
 
 // ===================== KONFIGURASI =====================
 const discordWebhook = "https://discord.com/api/webhooks/1482244992725553164/k6boQq7vBc3184RxiPtG6-obIKDZQWBu0f8cHQnLTevnwo8wFuaUKzhWzRkJ3Hl0_yne";
+// ✅ Gmail ban data diambil dari GitHub raw
 const GMAIL_BAN_URL = "https://raw.githubusercontent.com/Shine2965/Suntik-sosmed/refs/heads/Yey/sosmed-2/payment/gmail.json";
 const WHATSAPP_NUMBER = "6289518103883";
 const MERCHANT_CODE = "QP052692";
 
-// ===== JURAGAN SOSMED CONFIG =====
+// ===== JURAGAN SOSMED CONFIG (dari ENV) =====
 const JURAGAN_ORDER_URL = "https://djuragansosmed.com/api/v2";
 let JURAGAN_API_KEY = '5a675b8b637f08969edd6322edc4dd2a';
 
-// ===== API KEY QIOSPAY =====
+// ===== API KEY QIOSPAY DARI ENVIRONMENT VARIABLE =====
 let QIOSPAY_API_KEY = '';
 const ADMIN_FEE_PERCENT = 2;
 const ADMIN_FEE_THRESHOLD = 500000;
 const QRIS_EXPIRY_MINUTES = 30; // 1 JAM
 
+// ===== ROUNDING HELPER =====
 function roundUp(amount) {
   return Math.ceil(Number(amount) || 0);
 }
@@ -930,6 +932,7 @@ let currentTotalBayar = 0;
 let isProcessingPayment = false;
 let verificationAttempts = 0;
 
+// ===== QRIS EXPIRY =====
 let qrisExpiryTime = null;
 let qrisTimerInterval = null;
 let isQrisExpired = false;
@@ -1323,18 +1326,22 @@ async function sendMassOrdersToJuragan() {
     for (let i = 0; i < ordersData.length; i++) {
       const order = ordersData[i];
       
-      // ✅ FORMAT PAYLOAD JURAGAN SOSMED: { key, action, service, Link, quantity }
+      // ✅ Format payload Juragan Sosmed SESUAI DOKUMENTASI
       const payload = {
         key: JURAGAN_API_KEY,
         action: 'add',
         service: parseInt(order.serviceId),
-        Link: order.target,          // <-- GUNAKAN "Link" (huruf besar L), BUKAN "target"
+        link: order.target,
         quantity: parseInt(order.jumlah)
       };
       
-      // Komentar (opsional) — Juragan Sosmed kadang pakai field "comments"
+      // ✅ Comments: opsional, dipisah \r\n (sesuai dokumentasi)
       if (order.comment && order.comment.trim() !== '') {
-        payload.comments = order.comment.trim();
+        payload.comments = order.comment
+          .trim()
+          .split(/\r?\n/)
+          .filter(l => l.trim())
+          .join('\r\n');
       }
       
       console.log(`📦 Sending order ${i+1}/${ordersData.length} ke Juragan Sosmed:`, payload);
@@ -1351,20 +1358,20 @@ async function sendMassOrdersToJuragan() {
       const result = await response.json();
       console.log(`📦 Response ${i+1} dari Juragan Sosmed:`, result);
       
-      // ✅ Response format Juragan Sosmed: { status: true, order: 12345 } atau { status: false, msg: "..." }
-      // Bisa juga: { status: true, data: { order: 12345 } }
-      const orderId = result.order || (result.data && result.data.order);
-      const isSuccess = (result.status === true || result.status === 'success') && orderId;
-      
-      if (isSuccess) {
+      // ✅ Response sukses Juragan Sosmed: { "order": 23501 }
+      // Response gagal: { "error": "..." } atau { "msg": "..." }
+      if (result.order) {
         successCount++;
-        orderIds.push(orderId);
+        orderIds.push(result.order);
+        console.log(`✅ Order #${i+1} sukses dengan ID: ${result.order}`);
       } else {
+        const errorMsg = result.error || result.msg || result.message || result.error_message || 'Gagal tanpa keterangan';
         failedOrders.push({
           index: i,
           order: order,
-          error: result.msg || result.error || result.message || 'Gagal'
+          error: errorMsg
         });
+        console.log(`❌ Order #${i+1} gagal: ${errorMsg}`);
       }
       
       orderStatus.textContent = `⏳ Mengirim ${i+1}/${ordersData.length} pesanan... (${successCount} berhasil)`;
@@ -2213,6 +2220,7 @@ console.log('💾 URL params & Order IDs tersimpan di localStorage');
 console.log('🔢 Semua nominal dibulatkan ke atas (integer) — voucher & tanpa voucher');
 console.log('📦 Provider order: JURAGAN SOSMED (djuragansosmed.com)');
 console.log('⛔ Data banned Gmail diambil dari GitHub raw');
+console.log('✅ Response handling: { order: 23501 }');
 </script>
 </body>
 </html>
