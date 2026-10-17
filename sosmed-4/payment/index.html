@@ -536,7 +536,6 @@ p.alert-text{
 <div class="orb orb-2"></div>
 <div class="orb orb-3"></div>
 
-<!-- BANNED CONTAINER -->
 <div id="bannedContainer" style="display:none;" class="banned-page">
   <div class="banned-card">
     <span class="icon">🚫</span>
@@ -555,20 +554,17 @@ p.alert-text{
   </div>
 </div>
 
-<!-- PAYMENT CARD -->
 <div id="qrisCard" class="card">
   <h2>💳 Pembayaran</h2>
   <p class="alert-text"><b>Jangan tutup halaman saat sedang melakukan pembayaran atau pembayaran terverifikasi sampai muncul pop up id pesanan</b></p>
   
   <div class="subtitle">✦ Shine Shop - Sosmed 4 ✦</div>
   
-  <!-- GMAIL DISPLAY -->
   <div class="gmail-display">
     <span class="label">📧 Gmail:</span>
     <span class="value" id="gmailDisplay">Belum diatur</span>
   </div>
 
-  <!-- ========== PAYMENT METHOD SELECTOR ========== -->
   <div class="method-selector" id="methodSelector">
     <button class="method-btn active qris" id="btnMethodQris" onclick="selectPaymentMethod('qris')">
       <span class="m-icon">📱</span>
@@ -582,7 +578,6 @@ p.alert-text{
     </button>
   </div>
 
-  <!-- ========== SALDO INFO BOX ========== -->
   <div class="saldo-info" id="saldoInfo">
     <div class="si-label">💰 Saldo Anda</div>
     <div class="si-value" id="saldoValue">Rp 0</div>
@@ -599,7 +594,6 @@ p.alert-text{
     </button>
   </div>
 
-  <!-- ========== QRIS SECTION ========== -->
   <div class="qris-section" id="qrisSection">
     <div class="qr-wrapper" id="qrWrapper">
       <canvas id="qrisCanvas" width="240" height="240"></canvas>
@@ -641,7 +635,6 @@ p.alert-text{
   
   <p class="alert-text">📸 Screenshot seluruh transaksi serta bukti transfer untuk berjaga-jaga jika terdapat kendala, anda bisa menghubungi admin melalui CS Bot</p>
   
-  <!-- REFUND HISTORY BUTTON -->
   <button class="btn" style="background:linear-gradient(135deg,#22c55e,#16a34a);margin-top:12px;" onclick="showRefundHistory()">
     💰 Lihat Riwayat Refund
   </button>
@@ -653,6 +646,9 @@ const discordWebhook = "https://discord.com/api/webhooks/1482244992725553164/k6b
 const GMAIL_BAN_URL = "/sosmed-2/payment/gmail.json";
 const WHATSAPP_NUMBER = "6289518103883";
 const MERCHANT_CODE = "QP052692";
+
+// 📍 SOSMED TYPE — Sesuai file
+const SOSMED_TYPE = 'sosmed-4';
 
 const SUPABASE_URL = 'https://vvzgpbiesvupuhqqoxrg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ2emdwYmllc3Z1cHVocXFveHJnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIwNzE3MTUsImV4cCI6MjEwNzY0NzcxNX0.W3_Ck8B5Q-nEfNlsyeufJsLsTqbM8xPcAeHoAHfGRwY';
@@ -694,7 +690,6 @@ let target = "-";
 let jumlah = 0;
 let serviceId = null;
 
-// ================= PAYMENT METHOD STATE =================
 let paymentMethod = 'qris';
 let userBalance = 0;
 let userEmail = null;
@@ -723,7 +718,6 @@ if (layanan === "-" || layanan === "") {
   serviceId = p.get("serviceId") || null;
 }
 
-// ===== DISCORD STATE =====
 function getDiscordSentKey() { return `discord_sent_${trx}`; }
 function isDiscordAlreadySent() { try { return localStorage.getItem(getDiscordSentKey()) === 'true'; } catch { return false; } }
 function markDiscordSent() { try { localStorage.setItem(getDiscordSentKey(), 'true'); return true; } catch { return false; } }
@@ -732,13 +726,11 @@ function getOrderSentKey() { return `order_sent_${trx}`; }
 function isOrderAlreadySent() { try { return localStorage.getItem(getOrderSentKey()) === 'true'; } catch { return false; } }
 function markOrderSent() { try { localStorage.setItem(getOrderSentKey(), 'true'); return true; } catch { return false; } }
 
-// ================= PERSISTENT STATE =================
 function getPaymentStateKey() { return `payment_state_${trx}`; }
 function getPaymentState() { try { const d = localStorage.getItem(getPaymentStateKey()); return d ? JSON.parse(d) : null; } catch { return null; } }
 function savePaymentState(state) { try { localStorage.setItem(getPaymentStateKey(), JSON.stringify(state)); return true; } catch { return false; } }
 function clearPaymentState() { try { localStorage.removeItem(getPaymentStateKey()); return true; } catch { return false; } }
 
-// ================= AMBIL KONFIGURASI =================
 async function fetchConfigFromEnv() {
   try {
     const res = await fetch('/api/qris-config');
@@ -850,6 +842,80 @@ function startWIBClock() {
   window.bannedInterval = setInterval(updateBannedWIBDisplay, 1000);
 }
 startWIBClock();
+
+// ============================================================
+// 💾 SAVE ORDER DETAIL KE DATABASE
+// ============================================================
+async function saveAllOrdersDetailToDB(method) {
+  if (!supabaseClient || !userProfileId || !ordersData || ordersData.length === 0) {
+    console.warn('⚠️ saveAllOrdersDetail: skip (no data)');
+    return false;
+  }
+  
+  try {
+    const gmail = getStoredGmail();
+    const totalPayment = normalizeTotal(finalTotal);
+    const perOrderAmount = Math.ceil(totalPayment / ordersData.length);
+    
+    const { data: existing } = await supabaseClient
+      .from('orders_detail')
+      .select('id')
+      .eq('trx_id', trx)
+      .limit(1);
+    
+    if (existing && existing.length > 0) {
+      console.log('ℹ️ Order detail sudah ada, skip');
+      return true;
+    }
+    
+    const ordersArray = ordersData.map(o => ({
+      user_id: userProfileId,
+      email: userEmail || gmail || '-',
+      gmail_target: gmail || '-',
+      trx_id: trx,
+      service_id: String(o.serviceId || ''),
+      service_name: o.serviceName || '',
+      target: o.target || '',
+      quantity: parseInt(o.jumlah) || 0,
+      comment: o.comment || null,
+      total_payment: perOrderAmount,
+      payment_method: method,
+      sosmed_type: SOSMED_TYPE
+    }));
+    
+    const { data, error } = await supabaseClient.rpc('save_order_details_bulk', {
+      p_orders: ordersArray
+    });
+    
+    if (error) throw error;
+    if (!data.success) throw new Error(data.message);
+    
+    console.log(`💾 ${data.saved_count} order details saved (${SOSMED_TYPE}, ${method} @ Rp ${perOrderAmount.toLocaleString('id-ID')}/order)`);
+    return true;
+  } catch (err) {
+    console.error('❌ Save all orders error:', err.message);
+    return false;
+  }
+}
+
+async function updateOrderStatusInDB(order, status, juraganOrderId, failReason) {
+  if (!supabaseClient) return false;
+  try {
+    const { data, error } = await supabaseClient.rpc('update_order_detail_status', {
+      p_trx_id: trx,
+      p_service_id: String(order.serviceId || ''),
+      p_target: order.target || '',
+      p_status: status,
+      p_fayupedia_order_id: juraganOrderId || null,
+      p_fail_reason: failReason || null
+    });
+    if (error) throw error;
+    return data.success;
+  } catch (err) {
+    console.error('❌ Update order status error:', err.message);
+    return false;
+  }
+}
 
 // ============================================================
 // 🚫 CEK BANNED
@@ -995,7 +1061,6 @@ async function checkAndHandleBan() {
   return false;
 }
 
-// ================= LOAD USER BALANCE =================
 async function loadUserBalance() {
   if (!supabaseClient) return;
   try {
@@ -1052,7 +1117,6 @@ function updateSaldoDisplay() {
   }
 }
 
-// ================= SELECT METHOD =================
 function selectPaymentMethod(method) {
   if (isPaymentVerified || transactionLocked) {
     Swal.fire({
@@ -1090,7 +1154,6 @@ function selectPaymentMethod(method) {
   }
 }
 
-// ================= PAY WITH BALANCE =================
 async function payWithBalance() {
   if (!supabaseClient || !userProfileId) {
     Swal.fire({
@@ -1129,7 +1192,6 @@ async function payWithBalance() {
           <p>Saldo Anda: <b style="color:#facc15;">Rp ${userBalance.toLocaleString('id-ID')}</b></p>
           <p>Total bayar: <b style="color:#22c55e;">Rp ${totalBayarSaldo.toLocaleString('id-ID')}</b></p>
           <p style="margin-top:8px;color:#ef4444;">Kurang <b>Rp ${(totalBayarSaldo - userBalance).toLocaleString('id-ID')}</b></p>
-          <p style="margin-top:12px;font-size:12px;color:#94a3b8;">Silakan deposit saldo dulu atau pakai QRIS.</p>
         </div>
       `,
       icon: 'error',
@@ -1144,8 +1206,7 @@ async function payWithBalance() {
       <div style="text-align:left;color:#ddd;font-size:14px;">
         <p>Saldo saat ini: <b style="color:#facc15;">Rp ${userBalance.toLocaleString('id-ID')}</b></p>
         <p>Total bayar: <b style="color:#22c55e;">Rp ${totalBayarSaldo.toLocaleString('id-ID')}</b></p>
-        <p style="margin-top:8px;">Sisa saldo setelah bayar: <b style="color:#00c6ff;">Rp ${(userBalance - totalBayarSaldo).toLocaleString('id-ID')}</b></p>
-        <p style="margin-top:12px;font-size:12px;color:#ffaa00;">⚠️ Saldo akan langsung terpotong dan tidak bisa dibatalkan.</p>
+        <p style="margin-top:8px;">Sisa saldo: <b style="color:#00c6ff;">Rp ${(userBalance - totalBayarSaldo).toLocaleString('id-ID')}</b></p>
       </div>
     `,
     icon: 'question',
@@ -1171,7 +1232,6 @@ async function payWithBalance() {
     if (error) throw error;
     if (!data.success) throw new Error(data.message || 'Gagal potong saldo');
     
-    console.log('✅ Saldo dipotong. Saldo baru:', data.balance);
     userBalance = parseInt(data.balance) || 0;
     
     isPaymentVerified = true;
@@ -1187,7 +1247,6 @@ async function payWithBalance() {
       order_count: ordersData.length || 0
     });
     
-    // 🔥 TRACKING ORDER PAYMENTS untuk SALDO
     try {
       if (ordersData && ordersData.length > 0) {
         const { data: existing } = await supabaseClient
@@ -1211,12 +1270,14 @@ async function payWithBalance() {
             status: 'paid'
           }));
           await supabaseClient.from('order_payments').insert(orderPaymentRows);
-          console.log('💾 Saldo order_payments tracked:', orderPaymentRows.length);
         }
       }
     } catch (trackErr) {
       console.warn('⚠️ Gagal track order_payments Saldo:', trackErr.message);
     }
+    
+    // 💾 SAVE ORDER DETAIL KE DATABASE
+    await saveAllOrdersDetailToDB('saldo');
     
     updateSaldoDisplay();
     const statusEl = document.getElementById('paymentStatus');
@@ -1269,7 +1330,6 @@ async function payWithBalance() {
   }
 }
 
-// ================= QRIS TIMER =================
 function startQrisTimer() {
   if (qrisTimerInterval) clearInterval(qrisTimerInterval);
   qrisExpiryTime = Date.now() + (QRIS_EXPIRY_MINUTES * 60 * 1000);
@@ -1364,7 +1424,6 @@ function regenerateQris() {
   });
 }
 
-// ================= AUTO-REFUND FUNCTION =================
 async function autoRefundOrder(orderIndex, order, errorMessage) {
   if (!supabaseClient || !userProfileId) {
     console.warn('⚠️ Auto-refund: no userProfileId');
@@ -1442,6 +1501,23 @@ async function autoRefundOrder(orderIndex, order, errorMessage) {
         .eq('id', orderPayment.id);
     }
     
+    // 🔥 Tandai refunded di orders_detail
+    try {
+      await supabaseClient
+        .from('orders_detail')
+        .update({ 
+          refunded: true, 
+          refunded_amount: refundAmount,
+          refunded_at: new Date().toISOString(),
+          order_status: 'failed',
+          fail_reason: errorMessage,
+          updated_at: new Date().toISOString()
+        })
+        .eq('trx_id', trx)
+        .eq('service_id', String(order.serviceId || ''))
+        .eq('target', order.target || '');
+    } catch(e) { console.warn('Update orders_detail refund:', e.message); }
+    
     userBalance = parseInt(rpcResult.new_balance) || userBalance;
     
     return { success: true, amount: refundAmount, method: paymentMethodUsed };
@@ -1473,8 +1549,6 @@ async function autoRefundOrder(orderIndex, order, errorMessage) {
   }
 }
 
-// ================= ORDER KE JURAGAN SOSMED =================
-// ✅ DIPERBAIKI: Pakai /api/juragan endpoint (bukan /api/lollipop-services)
 async function sendOrdersToJuragan() {
   if (isOrderAlreadySent()) return true;
   if (isSendingOrder) return false;
@@ -1490,7 +1564,7 @@ async function sendOrdersToJuragan() {
   
   isSendingOrder = true;
   orderStatus.className = 'order-status loading';
-  orderStatus.textContent = `⏳ Mengirim ${ordersData.length} pesanan ke Shine Shop...`;
+  orderStatus.textContent = `⏳ Mengirim ${ordersData.length} pesanan...`;
   orderStatus.style.display = 'block';
   
   let successCount = 0;
@@ -1514,7 +1588,6 @@ async function sendOrdersToJuragan() {
       }
       
       try {
-        // ✅ ENDPOINT YANG BENAR: /api/juragan
         const response = await fetch('/api/juragan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1524,14 +1597,12 @@ async function sendOrdersToJuragan() {
         let result;
         try { result = await response.json(); } catch (e) { result = { error: 'Invalid JSON response', status: response.status }; }
         
-        // Juragan Sosmed return: { status: true, order: 12345 } atau { status: false, msg: "..." }
         const extractedOrderId = result.order || (result.data && result.data.order) || result.id;
         
         if (extractedOrderId) {
           successCount++;
           orderIds.push(extractedOrderId);
           
-          // Update order_payments: order sukses
           try {
             await supabaseClient.from('order_payments')
               .update({ 
@@ -1543,12 +1614,17 @@ async function sendOrdersToJuragan() {
               .eq('order_index', i);
           } catch(e) { console.warn('Track success err:', e); }
           
+          // 🔥 UPDATE ORDER DETAIL STATUS: PROCESSING
+          await updateOrderStatusInDB(order, 'processing', String(extractedOrderId), null);
+          
         } else {
           const errorMsg = result.msg || result.error || result.message || ('HTTP ' + response.status);
           failedOrders.push({ index: i, order, error: errorMsg });
           console.warn(`❌ Order #${i+1} gagal:`, errorMsg);
           
-          // AUTO REFUND
+          // 🔥 UPDATE ORDER DETAIL STATUS: FAILED
+          await updateOrderStatusInDB(order, 'failed', null, errorMsg);
+          
           const refundInfo = await autoRefundOrder(i, order, errorMsg);
           if (refundInfo.success) {
             totalRefundAmount += refundInfo.amount;
@@ -1563,6 +1639,9 @@ async function sendOrdersToJuragan() {
       } catch (fetchErr) {
         console.warn(`❌ Order #${i+1} error:`, fetchErr.message);
         failedOrders.push({ index: i, order, error: 'Network error: ' + fetchErr.message });
+        
+        // 🔥 UPDATE ORDER DETAIL STATUS: FAILED
+        await updateOrderStatusInDB(order, 'failed', null, 'Network error: ' + fetchErr.message);
         
         const refundInfo = await autoRefundOrder(i, order, 'Network error');
         if (refundInfo.success) {
@@ -1584,7 +1663,6 @@ async function sendOrdersToJuragan() {
     const orderIdStr = orderIds.join(', ') || '-';
     
     if (successCount === ordersData.length) {
-      // ✅ SEMUA SUKSES
       orderResultData = { orderIds, message: `${successCount} pesanan berhasil dibuat.` };
       orderStatus.className = 'order-status success';
       orderStatus.innerHTML = `
@@ -1620,7 +1698,6 @@ async function sendOrdersToJuragan() {
       return true;
       
     } else if (successCount > 0) {
-      // ⚠️ SEBAGIAN GAGAL
       orderStatus.className = 'order-status failed';
       orderStatus.innerHTML = `⚠️ ${successCount}/${ordersData.length} berhasil. ${refundedOrders.length} order di-refund.`;
       
@@ -1670,7 +1747,6 @@ async function sendOrdersToJuragan() {
       return false;
       
     } else {
-      // ❌ SEMUA GAGAL
       orderStatus.className = 'order-status failed';
       orderStatus.innerHTML = `❌ Semua pesanan gagal. Saldo dikembalikan Rp ${totalRefundAmount.toLocaleString('id-ID')}`;
       
@@ -1774,7 +1850,6 @@ ${successCount === ordersData.length ? '✅ Semua pesanan berhasil!' : `⚠️ $
   } catch (err) {}
 }
 
-// ================= SEND DISCORD (QRIS) =================
 async function sendToDiscord(gmail, userID) {
   if (isDiscordAlreadySent()) return true;
   if (isSendingDiscord) return false;
@@ -1818,7 +1893,6 @@ ${orderList || '  -'}
   } catch (err) { isSendingDiscord = false; return false; }
 }
 
-// ================= SEND DISCORD (SALDO) =================
 async function sendToDiscordSaldo(gmail, userID, totalBayar) {
   try {
     const refCode = localStorage.getItem('referral_code') || "-";
@@ -1854,7 +1928,6 @@ ${orderList || '  -'}
   } catch (err) {}
 }
 
-// ================= VALIDATE TX =================
 function isTransactionValid(transaction, targetAmount) {
   targetAmount = Math.ceil(Number(targetAmount) || 0);
   let rawAmount = String(transaction.amount || '');
@@ -1871,7 +1944,6 @@ function isTransactionValid(transaction, targetAmount) {
   return true;
 }
 
-// ================= CHECK PAYMENT (QRIS) =================
 async function checkPaymentStatus() {
   if (isProcessingPayment) return;
   if (paymentMethod !== 'qris') return;
@@ -1970,7 +2042,6 @@ async function checkPaymentStatus() {
       
       savePaymentState({ verified: true, orderSent: false, verifiedAt: new Date().toISOString(), totalBayar, trx, method: 'qris' });
       
-      // 🔥 TRACKING ORDER PAYMENTS untuk QRIS
       try {
         if (ordersData && ordersData.length > 0 && userProfileId) {
           const { data: existing } = await supabaseClient
@@ -2003,6 +2074,9 @@ async function checkPaymentStatus() {
       } catch (trackErr) {
         console.warn('⚠️ Gagal track order_payments QRIS:', trackErr.message);
       }
+      
+      // 💾 SAVE ORDER DETAIL KE DATABASE
+      await saveAllOrdersDetailToDB('qris');
       
       const sent = await sendToDiscord(gmail, userID);
       if (sent && ordersData.length > 0) {
@@ -2211,7 +2285,6 @@ document.getElementById('regenerateBtn').onclick = function() {
   }).then((result) => { if (result.isConfirmed) regenerateQris(); });
 };
 
-// ================= REFUND HISTORY =================
 async function showRefundHistory() {
   if (!supabaseClient || !userProfileId) {
     Swal.fire({ 
@@ -2237,7 +2310,7 @@ async function showRefundHistory() {
     if (!data || data.length === 0) {
       Swal.fire({ 
         title: '💰 Riwayat Refund', 
-        html: '<p style="color:#94a3b8;font-size:14px;">Belum ada refund.</p><p style="color:#6b7280;font-size:12px;margin-top:8px;">Refund akan muncul di sini jika ada pesanan yang gagal.</p>', 
+        html: '<p style="color:#94a3b8;font-size:14px;">Belum ada refund.</p>', 
         icon: 'info', 
         confirmButtonColor: '#facc15',
         background: '#0a0e1a', color: '#fff'
@@ -2295,7 +2368,6 @@ async function showRefundHistory() {
 
 window.showRefundHistory = showRefundHistory;
 
-// ================= INIT =================
 (async function() {
   await fetchConfigFromEnv();
   configLoaded = true;
@@ -2354,7 +2426,6 @@ window.showRefundHistory = showRefundHistory;
   }, 3000);
 })();
 
-// ================= ANTI DEVTOOLS =================
 document.addEventListener("keydown", function(e){
   if(e.key === "F12") e.preventDefault();
   if(e.ctrlKey && e.shiftKey && ["I","J"].includes(e.key)) e.preventDefault();
@@ -2370,9 +2441,10 @@ setInterval(() => {
   }
 }, 2000);
 
-console.log('💳 Payment Sosmed-4 (Juragan Sosmed) — QRIS + Saldo + Auto-Refund ready!');
-console.log('💰 Auto-Refund: enabled (via QRIS excl. kode unik + Saldo)');
-console.log('📡 Endpoint: /api/juragan (Juragan Sosmed)');
+console.log(`💳 Payment ${SOSMED_TYPE} (Juragan Sosmed) ready!`);
+console.log(`💰 Auto-Refund: enabled (via QRIS excl. kode unik + Saldo)`);
+console.log(`📡 Endpoint: /api/juragan`);
+console.log(`💾 Auto-save to orders_detail: enabled (sosmed_type=${SOSMED_TYPE})`);
 </script>
 </body>
 </html>
