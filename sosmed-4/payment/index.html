@@ -509,7 +509,78 @@ function startWIBClock() {
 startWIBClock();
 
 // ============================================================
-// 💾 SAVE ORDER DETAIL KE DATABASE (FIXED WITH FALLBACK)
+// 🎯 EXTRACT ORDER ID DARI RESPONSE JURAGAN
+// Support 20+ format response berbeda
+// ============================================================
+function extractOrderIdFromResponse(result) {
+  if (!result) return null;
+
+  const tryValue = (val) => {
+    if (val === null || val === undefined) return null;
+    if (typeof val === 'number' && !isNaN(val) && val > 0) return String(val);
+    if (typeof val === 'string' && val.trim() !== '' && val !== '0') return val.trim();
+    return null;
+  };
+
+  const isValidId = (val) => {
+    if (!val) return false;
+    const str = String(val).trim();
+    if (str === '' || str === '0' || str === 'null' || str === 'undefined') return false;
+    if (/^\d+$/.test(str) && parseInt(str) > 0) return true;
+    if (str.length >= 3 && str.length <= 50) return true;
+    return false;
+  };
+
+  const candidates = [
+    result.order,
+    result.order_id,
+    result.orderId,
+    result.id,
+    result.OrderId,
+    result.Order,
+    result.OrderID,
+    result.data?.order,
+    result.data?.order_id,
+    result.data?.orderId,
+    result.data?.id,
+    result.result?.order,
+    result.result?.order_id,
+    result.result?.id,
+    result.response?.order,
+    result.response?.order_id,
+    result.response?.id,
+    result.payload?.order,
+    result.payload?.order_id,
+    result.payload?.id,
+    result.orders?.[0]?.id,
+    result.orders?.[0]?.order_id,
+    result.orders?.[0]?.order,
+  ];
+
+  for (const candidate of candidates) {
+    const val = tryValue(candidate);
+    if (val && isValidId(val)) return val;
+  }
+
+  if (Array.isArray(result) && result.length > 0) {
+    const first = result[0];
+    if (typeof first === 'object') {
+      const val = tryValue(first.order) || tryValue(first.order_id) || 
+                  tryValue(first.id) || tryValue(first.OrderId);
+      if (val && isValidId(val)) return val;
+    }
+    const val = tryValue(first);
+    if (val && isValidId(val)) return val;
+  }
+
+  const directVal = tryValue(result);
+  if (directVal && isValidId(directVal)) return directVal;
+
+  return null;
+}
+
+// ============================================================
+// 💾 SAVE ORDER DETAIL KE DATABASE
 // ============================================================
 async function saveAllOrdersDetailToDB(method) {
   if (!supabaseClient || !userProfileId) {
@@ -517,7 +588,6 @@ async function saveAllOrdersDetailToDB(method) {
     return false;
   }
   
-  // 🔥 FALLBACK: kalau ordersData kosong, coba parse ulang dari URL/localStorage
   if ((!ordersData || ordersData.length === 0) && trx && trx !== '-') {
     try {
       const urlOrders = new URLSearchParams(location.search).get('orders');
@@ -545,8 +615,6 @@ async function saveAllOrdersDetailToDB(method) {
     const gmail = getStoredGmail();
     const totalPayment = normalizeTotal(finalTotal);
     const perOrderAmount = Math.ceil(totalPayment / ordersData.length);
-    
-    // Normalize payment method
     const normalizedMethod = method === 'balance' ? 'saldo' : method;
     
     const { data: existing } = await supabaseClient
@@ -929,10 +997,8 @@ async function payWithBalance() {
     isPaymentVerified = true;
     transactionLocked = true;
     
-    // 💾 SAVE ORDER DETAIL (via RPC)
     await saveAllOrdersDetailToDB('saldo');
     
-    // Track order_payments (legacy)
     try {
       if (ordersData && ordersData.length > 0) {
         const { data: existing } = await supabaseClient
@@ -1182,7 +1248,6 @@ async function autoRefundOrder(orderIndex, order, errorMessage) {
         .eq('id', orderPayment.id);
     }
     
-    // 🔥 Update orders_detail
     try {
       await supabaseClient
         .from('orders_detail')
@@ -1204,15 +1269,8 @@ async function autoRefundOrder(orderIndex, order, errorMessage) {
     
   } catch (err) {
     console.error('❌ Auto-refund error:', err.message);
-    
     try {
-      let fallbackAmount;
-      if (paymentMethod === 'qris') {
-        fallbackAmount = Math.ceil(normalizeTotal(finalTotal) / ordersData.length);
-      } else {
-        fallbackAmount = Math.ceil(normalizeTotal(finalTotal) / ordersData.length);
-      }
-      
+      let fallbackAmount = Math.ceil(normalizeTotal(finalTotal) / ordersData.length);
       await supabaseClient.from('refunds').insert({
         user_id: userProfileId,
         email: userEmail || '-',
@@ -1224,11 +1282,14 @@ async function autoRefundOrder(orderIndex, order, errorMessage) {
         source_method: paymentMethod
       });
     } catch(e) {}
-    
     return { success: false, amount: 0 };
   }
 }
 
+// ============================================================
+// 🚀 KIRIM ORDER KE JURAGAN
+// Order ID diambil dari response via extractOrderIdFromResponse()
+// ============================================================
 async function sendOrdersToJuragan() {
   if (isOrderAlreadySent()) return true;
   if (isSendingOrder) return false;
@@ -1268,18 +1329,36 @@ async function sendOrdersToJuragan() {
       }
       
       try {
+        console.log(`📤 [Order ${i+1}/${ordersData.length}] Kirim ke Juragan:`, payloadData);
+        
         const response = await fetch('/api/juragan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payloadData)
         });
         
+        const rawText = await response.text();
+        console.log(`📥 [Order ${i+1}] Raw response:`, rawText);
+        
         let result;
-        try { result = await response.json(); } catch (e) { result = { error: 'Invalid JSON response', status: response.status }; }
+        try {
+          result = JSON.parse(rawText);
+        } catch(e) {
+          console.error(`❌ [Order ${i+1}] Response bukan JSON:`, rawText);
+          result = { error: 'Invalid JSON response', status: response.status, raw: rawText };
+        }
         
-        const extractedOrderId = result.order || (result.data && result.data.order) || result.id;
+        console.log(`📦 [Order ${i+1}] Parsed result:`, result);
         
-        if (extractedOrderId) {
+        // 🔥 EXTRACT ORDER ID DARI BERBAGAI FORMAT RESPONSE
+        const extractedOrderId = extractOrderIdFromResponse(result);
+        
+        console.log(`🎯 [Order ${i+1}] Extracted Order ID:`, extractedOrderId);
+        
+        // Cek juga status === true sebagai validasi tambahan
+        const isSuccessStatus = result.status === true || result.status === 'true' || result.success === true;
+        
+        if (extractedOrderId && (isSuccessStatus || !('status' in result))) {
           successCount++;
           orderIds.push(extractedOrderId);
           
@@ -1294,15 +1373,17 @@ async function sendOrdersToJuragan() {
               .eq('order_index', i);
           } catch(e) { console.warn('Track success err:', e); }
           
-          // 🔥 UPDATE ORDER DETAIL STATUS: PROCESSING
-          await updateOrderStatusInDB(order, 'processing', String(extractedOrderId), null);
+          // 🔥 SIMPAN ORDER ID KE orders_detail
+          const updateResult = await updateOrderStatusInDB(order, 'processing', String(extractedOrderId), null);
+          console.log(`💾 [Order ${i+1}] DB update:`, updateResult);
           
         } else {
-          const errorMsg = result.msg || result.error || result.message || ('HTTP ' + response.status);
+          const errorMsg = result.msg || result.error || result.message || 
+                          result.data?.msg || result.data?.error ||
+                          (extractedOrderId ? 'Status tidak success' : 'Tidak ada order ID di response');
           failedOrders.push({ index: i, order, error: errorMsg });
-          console.warn(`❌ Order #${i+1} gagal:`, errorMsg);
+          console.warn(`❌ [Order ${i+1}] Gagal:`, errorMsg);
           
-          // 🔥 UPDATE ORDER DETAIL STATUS: FAILED
           await updateOrderStatusInDB(order, 'failed', null, errorMsg);
           
           const refundInfo = await autoRefundOrder(i, order, errorMsg);
@@ -1315,7 +1396,7 @@ async function sendOrdersToJuragan() {
           }
         }
       } catch (fetchErr) {
-        console.warn(`❌ Order #${i+1} error:`, fetchErr.message);
+        console.warn(`❌ [Order ${i+1}] Network error:`, fetchErr.message);
         failedOrders.push({ index: i, order, error: 'Network error: ' + fetchErr.message });
         
         await updateOrderStatusInDB(order, 'failed', null, 'Network error: ' + fetchErr.message);
@@ -1752,7 +1833,6 @@ async function checkPaymentStatus() {
         console.warn('⚠️ Gagal track order_payments QRIS:', trackErr.message);
       }
       
-      // 💾 SAVE ORDER DETAIL KE DATABASE
       await saveAllOrdersDetailToDB('qris');
       
       const sent = await sendToDiscord(gmail, userID);
